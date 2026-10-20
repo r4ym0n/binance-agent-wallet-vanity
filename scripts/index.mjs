@@ -237,7 +237,9 @@ async function rpcCall(method, params) {
           logsFailStreak.delete(url); // 偶发网络错误不累计
         }
       }
-      if (e instanceof LimitError) throw e; // 限窗错误不重试其它节点,交给窗口自适应
+      // 限窗错误:各节点上限不同(dataseed 可能卡在窗口 2,drpc 能到 10000),
+      // 先轮询完剩余节点;全部拒绝才向上抛 LimitError 让窗口自适应减半
+      if (e instanceof LimitError) continue;
     }
   }
   throw lastErr || new Error("所有 RPC 节点均失败");
