@@ -25,7 +25,7 @@ jobs:
 
       - name: 运行索引器
         env:
-          BSCSCAN_API_KEY: ${{ secrets.BSCSCAN_API_KEY }}
+          BSC_RPC_URLS: ${{ secrets.BSC_RPC_URLS }}
         run: node scripts/index.mjs
 
       - name: 提交数据变更

@@ -39,8 +39,10 @@ node scripts/index.mjs --blocks 2000
 窗口自适应(初始 4000 块,超限自动减半、成功后缓慢回升)、
 单轮 6 分钟时间预算与 200 次调用上限(到点保存进度退出,留给下一轮)。
 
-设置 `BSCSCAN_API_KEY`(见 `.env.example`,去 https://bscscan.com/apis
-免费申请)后优先走 Bscscan getLogs API,无窗口限制、速度快得多。
+可配置带 key 的 RPC(见 `.env.example` 的 `BSC_RPC_URLS`,多个用逗号分隔),
+会排在公共节点之前优先使用。注意:BscScan/Etherscan 的免费 API key
+已不覆盖 BSC(v2 统一 API 仅付费计划可用),请使用 BSC 原生 RPC 服务商
+(如 [NodeReal](https://nodereal.io/) 免费层)的 key。
 
 GitHub Actions(`.github/workflows/index.yml`)每 15 分钟运行一次索引器,
 有数据变更自动 commit + push(concurrency group 防并发)。

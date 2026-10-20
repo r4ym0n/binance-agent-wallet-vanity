@@ -7,8 +7,8 @@
 //   node scripts/index.mjs --blocks N # 只扫最近 N 块(本地验证用,不回写 lastIndexedBlock)
 //
 // 环境变量:
-//   BSCSCAN_API_KEY 可选;设置后优先走 Bscscan getLogs API(无窗口限制,分页),
-//   去 https://bscscan.com/apis 免费申请。
+//   BSC_RPC_URLS 可选;逗号分隔的付费/免费 key RPC 列表(如 NodeReal、Ankr),
+//   会排在公共节点之前优先使用。注意:BscScan/Etherscan 的免费 API key 已不覆盖 BSC。
 //
 // 公共 RPC 限流严重:所有请求间隔 ≥1.2s,单轮运行上限 6 分钟,RPC 多节点轮询。
 
@@ -27,7 +27,12 @@ const NAME_REGISTERED_TOPIC =
   "0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5";
 const START_BLOCK = 128589000;
 
+// BSC_RPC_URLS 环境变量里的节点(带 key 的付费/免费层)排在最前优先使用
 const RPCS = [
+  ...(process.env.BSC_RPC_URLS || "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean),
   "https://bsc-dataseed.binance.org",
   "https://bsc-dataseed1.defibit.io",
   "https://bsc-rpc.publicnode.com",
@@ -188,35 +193,6 @@ async function rpcCall(method, params) {
   throw lastErr || new Error("所有 RPC 节点均失败");
 }
 
-// ---------- Bscscan API(可选,优先) ----------
-
-const BSCSCAN_KEY = process.env.BSCSCAN_API_KEY || "";
-
-async function bscscanGetLogs(fromBlock, toBlock) {
-  const all = [];
-  let page = 1;
-  for (;;) {
-    if (callCount >= MAX_CALLS) throw new Error("调用次数已达上限");
-    await throttle();
-    callCount++;
-    const url =
-      `https://api.bscscan.com/api?module=logs&action=getLogs` +
-      `&address=${CONTRACT}&topic0=${NAME_REGISTERED_TOPIC}` +
-      `&fromBlock=${fromBlock}&toBlock=${toBlock}` +
-      `&page=${page}&offset=1000&apikey=${BSCSCAN_KEY}`;
-    const res = await fetch(url);
-    const json = await res.json();
-    if (json.status !== "1") {
-      if (json.message === "No records found") return all;
-      throw new Error(`bscscan: ${json.message} ${json.result || ""}`);
-    }
-    const logs = Array.isArray(json.result) ? json.result : [];
-    all.push(...logs);
-    if (logs.length < 1000) return all;
-    page++;
-  }
-}
-
 // ---------- 日志解析 ----------
 
 function topicToAddress(topic) {
@@ -320,12 +296,6 @@ function absorbLogs(logs) {
 }
 
 async function scanRange(fromBlock, toBlock) {
-  if (BSCSCAN_KEY) {
-    log(`使用 Bscscan API 扫描 ${fromBlock} -> ${toBlock}`);
-    const logs = await bscscanGetLogs(fromBlock, toBlock);
-    absorbLogs(logs);
-    return toBlock;
-  }
   let window = INITIAL_WINDOW;
   let cur = fromBlock;
   let lastDone = fromBlock - 1;
@@ -412,7 +382,7 @@ const tsByBlock = new Map();
 for (const r of needTs) if (!tsByBlock.has(r.block)) tsByBlock.set(r.block, []);
 for (const r of needTs) tsByBlock.get(r.block).push(r);
 
-if (tsByBlock.size > 0 && !BSCSCAN_KEY) {
+if (tsByBlock.size > 0) {
   log(`补录 ${Math.min(tsByBlock.size, TS_BACKFILL_CAP)}/${tsByBlock.size} 个区块的时间戳`);
   let filled = 0;
   for (const [block, recs] of [...tsByBlock.entries()].slice(0, TS_BACKFILL_CAP)) {
