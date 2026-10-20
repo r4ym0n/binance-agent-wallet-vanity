@@ -160,16 +160,24 @@ async function throttle() {
 class LimitError extends Error {}
 
 let rpcIdx = 0;
+// 节点对 eth_getLogs 的连续失败计数;钱包级 RPC(如 OKX NodeOne)可能整体关闭
+// getLogs(任何窗口都回 params check error),检测后将其移出日志查询轮询,
+// 但保留给 getBlockByNumber/getBlockReceipts 等查询使用。
+const logsDead = new Set();
+const logsFailStreak = new Map();
+const LOGS_DEAD_THRESHOLD = 5;
 
 async function rpcCall(method, params) {
   let lastErr;
-  for (let attempt = 0; attempt < RPCS.length; attempt++) {
+  const eligible = RPCS.filter((u) => method !== "eth_getLogs" || !logsDead.has(u));
+  if (eligible.length === 0) throw new Error("所有节点的 eth_getLogs 均不可用");
+  for (let attempt = 0; attempt < eligible.length; attempt++) {
     if (callCount >= MAX_CALLS) throw new Error("调用次数已达上限");
     // 首次尝试固定用列表第一位(env 配置的优先节点),仅失败后才轮询其它节点
     const url =
       attempt === 0
-        ? RPCS[0]
-        : RPCS[(rpcIdx++ % (RPCS.length - 1)) + 1];
+        ? eligible[0]
+        : eligible[(rpcIdx++ % (eligible.length - 1)) + 1];
     await throttle();
     callCount++;
     try {
@@ -212,10 +220,23 @@ async function rpcCall(method, params) {
         }
         throw new Error(`RPC ${json.error.code}: ${msg}`);
       }
+      if (method === "eth_getLogs") logsFailStreak.delete(url); // 成功则清零
       return json.result;
     } catch (e) {
       lastErr = e;
       log(`RPC 节点失败 [${new URL(url).host}] ${method}: ${e.message}`);
+      if (method === "eth_getLogs") {
+        if (e instanceof LimitError && /params check error|check error/i.test(e.message)) {
+          const streak = (logsFailStreak.get(url) || 0) + 1;
+          logsFailStreak.set(url, streak);
+          if (streak >= LOGS_DEAD_THRESHOLD && !logsDead.has(url)) {
+            logsDead.add(url);
+            log(`节点 ${new URL(url).host} 连续 ${streak} 次拒绝 eth_getLogs,移出日志查询轮询`);
+          }
+        } else if (!(e instanceof LimitError)) {
+          logsFailStreak.delete(url); // 偶发网络错误不累计
+        }
+      }
       if (e instanceof LimitError) throw e; // 限窗错误不重试其它节点,交给窗口自适应
     }
   }
