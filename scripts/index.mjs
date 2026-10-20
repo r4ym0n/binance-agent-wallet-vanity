@@ -57,6 +57,8 @@ const MAX_WINDOW = 10000;
 const INITIAL_WINDOW = 4000;
 const MIN_WINDOW = 2; // 部分网关(如 OKX NodeOne)拒绝 fromBlock==toBlock 的单块查询
 const TS_BACKFILL_CAP = Number(process.env.INDEX_TS_BACKFILL_CAP || 60); // 时间戳补录最多查多少个块
+const HOLE_SKIP_THRESHOLD = 40; // 连续多少个最小窗口被跳过(无一次成功),判定为"洞"
+const HOLE_JUMP = 50000; // 判洞后向前跳跃的块数,洞记入 state.holes 待后续回填
 
 // 规则库:优先直接 import 共享的 TS(Node 26 原生 type stripping);
 // 若失败则退化为下方复制的同逻辑实现,保证脚本始终可运行。
@@ -320,7 +322,9 @@ const recentBlocks =
 let state = await loadJson(STATE_FILE, {
   lastIndexedBlock: START_BLOCK - 1,
   scannedUntil: START_BLOCK - 1,
+  holes: [],
 });
+let holes = Array.isArray(state.holes) ? state.holes.filter((h) => Array.isArray(h) && h.length === 2) : [];
 let vanity = await loadJson(VANITY_FILE, []);
 if (!Array.isArray(vanity)) vanity = [];
 
@@ -353,11 +357,30 @@ function absorbLogs(logs) {
   }
 }
 
-async function scanRange(fromBlock, toBlock) {
+// 跳过已知洞(曾经无法扫描的区段),避免每轮在洞上重复消耗调用
+function skipHoles(cur, holes) {
+  let c = cur;
+  let moved = true;
+  while (moved) {
+    moved = false;
+    for (const h of holes) {
+      if (c >= h[0] && c <= h[1]) {
+        c = h[1] + 1;
+        moved = true;
+      }
+    }
+  }
+  return c;
+}
+
+async function scanRange(fromBlock, toBlock, holes = []) {
   let window = INITIAL_WINDOW;
   const txCountCache = new Map(); // 探针结果缓存,减半重试时避免重复查询同一块
-  let cur = fromBlock;
-  let lastDone = fromBlock - 1;
+  const newHoles = [];
+  let floorSkips = 0; // 连续"最小窗口仍无法扫描"次数,达到阈值判洞
+  let holeStart = null;
+  let cur = skipHoles(fromBlock, holes);
+  let lastDone = cur - 1;
   while (cur <= toBlock) {
     if (Date.now() - startedAt > TIME_BUDGET_MS) {
       log("达到单轮时间预算,保存进度退出");
@@ -366,6 +389,11 @@ async function scanRange(fromBlock, toBlock) {
     if (callCount >= MAX_CALLS) {
       log("达到单轮调用次数上限,保存进度退出");
       break;
+    }
+    const skipped = skipHoles(cur, holes);
+    if (skipped !== cur) {
+      cur = skipped;
+      continue;
     }
     const end = Math.min(cur + window - 1, toBlock);
     try {
@@ -381,6 +409,8 @@ async function scanRange(fromBlock, toBlock) {
       lastDone = end;
       cur = end + 1;
       window = Math.min(MAX_WINDOW, Math.ceil(window * 1.25)); // 成功后缓慢回升
+      floorSkips = 0;
+      holeStart = null;
       process.stdout.write(
         `\r已扫至 ${cur - 1} / ${toBlock}(窗口 ${window},调用 ${callCount})    `
       );
@@ -389,7 +419,10 @@ async function scanRange(fromBlock, toBlock) {
         // 最小窗口仍超限。两种可能(OKX NodeOne 行为):(1) 该窗口内日志量超网关
         // 上限(真丢数据);(2) 网关对空结果也回 403。每块注册笔数 ≤ 块内总交易数,
         // 故用交易数探针区分:总交易数低于日志上限 ⇒ 必然是空结果,安全跳过。
+        // 若连续跳过次数达到阈值,判定为当前节点能力无法覆盖的"洞":整体跳过并记录,
+        // 避免流水线永久卡死;洞可由后续轮次(更好的节点/key)用 --holes 回填。
         const span = end - cur + 1;
+        if (holeStart == null) holeStart = cur;
         let totalTx = 0;
         let probeOk = true;
         for (let b = cur; b <= end; b++) {
@@ -416,6 +449,16 @@ async function scanRange(fromBlock, toBlock) {
           log(`\n窗口 ${cur - span}-${cur - 1} 交易数 ${totalTx} 达峰值量级,日志超网关上限,可能丢失该窗口靓号`);
         }
         // totalTx < 1500:必为空结果(或近空),静默跳过即可
+        floorSkips++;
+        if (floorSkips >= HOLE_SKIP_THRESHOLD) {
+          newHoles.push([holeStart, cur - 1]);
+          log(`\n连续 ${floorSkips} 次无法扫描,判定区块 ${holeStart}-${cur - 1} 为"洞",记入待回填列表,向前跳跃 ${HOLE_JUMP}`);
+          lastDone = cur + HOLE_JUMP - 1;
+          cur += HOLE_JUMP;
+          window = INITIAL_WINDOW;
+          floorSkips = 0;
+          holeStart = null;
+        }
       } else if (e instanceof LimitError) {
         window = Math.max(MIN_WINDOW, Math.floor(window / 2)); // 限窗/超限:减半重试
         log(`\n窗口超限(${e.message}),窗口降至 ${window}`);
@@ -424,13 +467,24 @@ async function scanRange(fromBlock, toBlock) {
         log(`\n扫描失败,窗口降至 ${window} 重试: ${e.message}`);
       } else {
         log(`\n区块 ${cur}-${end} 扫描失败,跳过: ${e.message}`);
+        if (holeStart == null) holeStart = cur;
+        floorSkips++;
         lastDone = end;
         cur = end + 1; // 避免死锁
+        if (floorSkips >= HOLE_SKIP_THRESHOLD) {
+          newHoles.push([holeStart, cur - 1]);
+          log(`\n连续 ${floorSkips} 次无法扫描,判定区块 ${holeStart}-${cur - 1} 为"洞",记入待回填列表,向前跳跃 ${HOLE_JUMP}`);
+          lastDone = cur + HOLE_JUMP - 1;
+          cur += HOLE_JUMP;
+          window = INITIAL_WINDOW;
+          floorSkips = 0;
+          holeStart = null;
+        }
       }
     }
   }
   process.stdout.write("\n");
-  return lastDone;
+  return { lastDone, newHoles };
 }
 
 // ---------- 执行 ----------
@@ -440,31 +494,66 @@ await mkdir(DATA_DIR, { recursive: true });
 const head = await fetchHeadBlock();
 log(`当前区块高度: ${head}`);
 
-let from;
-let to;
-if (recentOnly && recentBlocks > 0) {
-  from = Math.max(START_BLOCK, head - recentBlocks + 1);
-  to = head;
-  log(`--blocks 模式:仅扫描最近 ${recentBlocks} 块(${from} -> ${to}),不回写索引进度`);
-} else {
-  from = Math.max(START_BLOCK, (state.lastIndexedBlock || START_BLOCK - 1) + 1);
-  to = head;
-  log(`增量扫描: ${from} -> ${to}`);
+// 合并重叠/相邻的洞区间并排序
+function coalesceHoles(list) {
+  const sorted = [...list].sort((a, b) => a[0] - b[0]);
+  const out = [];
+  for (const h of sorted) {
+    const last = out[out.length - 1];
+    if (last && h[0] <= last[1] + 1) last[1] = Math.max(last[1], h[1]);
+    else out.push([h[0], h[1]]);
+  }
+  return out;
 }
 
 let scannedUntil = state.scannedUntil || START_BLOCK - 1;
 let lastIndexedBlock = state.lastIndexedBlock || START_BLOCK - 1;
+const holesMode = process.argv.includes("--holes");
 
-if (from <= to) {
-  const done = await scanRange(from, to);
-  scannedUntil = Math.max(scannedUntil, done);
-  if (!(recentOnly && recentBlocks > 0)) {
-    lastIndexedBlock = Math.max(lastIndexedBlock, done);
+if (holesMode) {
+  // 回填模式:扫描 state.holes 里的洞,扫完的洞从列表移除(部分扫完则缩小范围)
+  if (recentOnly) throw new Error("--holes 与 --blocks 不能同时使用");
+  if (holes.length === 0) {
+    log("无待回填的洞");
+  } else {
+    log(`回填模式:共 ${holes.length} 个洞待扫描`);
+    const remaining = [];
+    for (const h of holes) {
+      if (Date.now() - startedAt > TIME_BUDGET_MS || callCount >= MAX_CALLS) {
+        remaining.push(h);
+        continue;
+      }
+      log(`回填洞 [${h[0]}, ${h[1]}]`);
+      const { lastDone, newHoles } = await scanRange(h[0], h[1]);
+      const overlapNew = newHoles.filter((n) => n[1] >= h[0] && n[0] <= h[1]);
+      if (lastDone >= h[1] && overlapNew.length === 0) {
+        log(`洞 [${h[0]}, ${h[1]}] 回填完成`);
+      } else {
+        remaining.push([Math.max(h[0], lastDone + 1), h[1]]);
+        remaining.push(...overlapNew);
+      }
+    }
+    holes = coalesceHoles(remaining);
+    log(`回填结束:剩余 ${holes.length} 个洞`);
   }
+} else if (recentOnly && recentBlocks > 0) {
+  const from = Math.max(START_BLOCK, head - recentBlocks + 1);
+  log(`--blocks 模式:仅扫描最近 ${recentBlocks} 块(${from} -> ${head}),不回写索引进度`);
+  if (from <= head) await scanRange(from, head, holes);
 } else {
-  log("已是最新,无需扫描");
-  if (!(recentOnly && recentBlocks > 0)) lastIndexedBlock = Math.max(lastIndexedBlock, to);
-  scannedUntil = Math.max(scannedUntil, to);
+  const from = Math.max(START_BLOCK, (state.lastIndexedBlock || START_BLOCK - 1) + 1);
+  log(`增量扫描: ${from} -> ${head}(跳过 ${holes.length} 个已知洞)`);
+  if (from <= head) {
+    const { lastDone, newHoles } = await scanRange(from, head, holes);
+    scannedUntil = Math.max(scannedUntil, lastDone);
+    lastIndexedBlock = Math.max(lastIndexedBlock, lastDone);
+    holes = coalesceHoles([...holes, ...newHoles]);
+    if (newHoles.length > 0) log(`本轮新发现 ${newHoles.length} 个洞,待回填洞共 ${holes.length} 个`);
+  } else {
+    log("已是最新,无需扫描");
+    lastIndexedBlock = Math.max(lastIndexedBlock, head);
+    scannedUntil = Math.max(scannedUntil, head);
+  }
 }
 
 // 时间戳补录:只对收录的名字、同名块去重,限流
@@ -504,8 +593,8 @@ const stats = {
 };
 await saveJson(STATS_FILE, stats);
 
-if (!(recentOnly && recentBlocks > 0)) {
-  await saveJson(STATE_FILE, { lastIndexedBlock, scannedUntil });
+if (!recentOnly) {
+  await saveJson(STATE_FILE, { lastIndexedBlock, scannedUntil, holes });
 }
 
 log(
