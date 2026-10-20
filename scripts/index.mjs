@@ -7,10 +7,15 @@
 //   node scripts/index.mjs --blocks N # 只扫最近 N 块(本地验证用,不回写 lastIndexedBlock)
 //
 // 环境变量:
-//   BSC_RPC_URLS 可选;逗号分隔的付费/免费 key RPC 列表(如 NodeReal、Ankr),
-//   会排在公共节点之前优先使用。注意:BscScan/Etherscan 的免费 API key 已不覆盖 BSC。
+//   BSC_RPC_URLS 可选;逗号分隔的付费/免费 key RPC 列表(如 OKX NodeOne、NodeReal、Ankr),
+//   会排在公共节点之前,且每个请求优先尝试。注意:BscScan/Etherscan 的免费 API key 已不覆盖 BSC。
+//   INDEX_MIN_INTERVAL_MS   请求间隔(默认 1200)
+//   INDEX_TIME_BUDGET_MS    单轮时间预算(默认 6 分钟;本地全量补扫可调大)
+//   INDEX_MAX_CALLS         单轮 RPC 调用上限(默认 200;本地全量补扫可调大)
+//   INDEX_TS_BACKFILL_CAP   单轮时间戳补录块数上限(默认 60)
 //
-// 公共 RPC 限流严重:所有请求间隔 ≥1.2s,单轮运行上限 6 分钟,RPC 多节点轮询。
+// 公共 RPC 限流严重,索引器多节点兜底;OKX NodeOne 特性:拒绝单块查询、空结果回 403、
+// 按响应大小限流——均已适配(最小窗口 2、交易数探针区分空结果与真超限)。
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -25,7 +30,10 @@ const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const CONTRACT = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f";
 const NAME_REGISTERED_TOPIC =
   "0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5";
-const START_BLOCK = 128589000;
+// 首个注册区块在 (128583743, 128589138] 之间(OKX 空窗 403 二分定位下界,
+// 128589138 是已验证 claim 交易所在块);取 128584000 留少量前缀余量,
+// 如需更早可前移并删除 data/state.json 重扫
+const START_BLOCK = 128584000;
 
 // BSC_RPC_URLS 环境变量里的节点(带 key 的付费/免费层)排在最前优先使用
 const RPCS = [
@@ -41,13 +49,14 @@ const RPCS = [
   "https://bsc-mainnet.public.blastapi.io",
 ];
 
-const MIN_INTERVAL_MS = 1200; // 请求间隔下限
-const TIME_BUDGET_MS = 6 * 60 * 1000; // 单轮最多 6 分钟
-const MAX_CALLS = 200; // 单轮 RPC 调用次数上限
+const MIN_INTERVAL_MS = Number(process.env.INDEX_MIN_INTERVAL_MS || 1200); // 请求间隔下限
+const TIME_BUDGET_MS = Number(process.env.INDEX_TIME_BUDGET_MS || 6 * 60 * 1000); // 单轮时间预算
+const MAX_CALLS = Number(process.env.INDEX_MAX_CALLS || 200); // 单轮 RPC 调用次数上限
 const RPC_TIMEOUT_MS = 20000;
 const MAX_WINDOW = 10000;
 const INITIAL_WINDOW = 4000;
-const TS_BACKFILL_CAP = 60; // 时间戳补录最多查多少个块
+const MIN_WINDOW = 2; // 部分网关(如 OKX NodeOne)拒绝 fromBlock==toBlock 的单块查询
+const TS_BACKFILL_CAP = Number(process.env.INDEX_TS_BACKFILL_CAP || 60); // 时间戳补录最多查多少个块
 
 // 规则库:优先直接 import 共享的 TS(Node 26 原生 type stripping);
 // 若失败则退化为下方复制的同逻辑实现,保证脚本始终可运行。
@@ -156,8 +165,11 @@ async function rpcCall(method, params) {
   let lastErr;
   for (let attempt = 0; attempt < RPCS.length; attempt++) {
     if (callCount >= MAX_CALLS) throw new Error("调用次数已达上限");
-    const url = RPCS[rpcIdx % RPCS.length];
-    rpcIdx++;
+    // 首次尝试固定用列表第一位(env 配置的优先节点),仅失败后才轮询其它节点
+    const url =
+      attempt === 0
+        ? RPCS[0]
+        : RPCS[(rpcIdx++ % (RPCS.length - 1)) + 1];
     await throttle();
     callCount++;
     try {
@@ -175,7 +187,24 @@ async function rpcCall(method, params) {
         signal: controller.signal,
       });
       clearTimeout(timer);
-      const json = await res.json();
+      // 部分网关(如 OKX NodeOne)对空结果或超限结果直接回非 2xx + 纯文本 message,
+      // 没有 jsonrpc error 结构;必须显式检查,否则会当成"无日志"静默跳过数据。
+      let json;
+      try {
+        json = await res.json();
+      } catch {
+        throw new Error(`HTTP ${res.status}: 非 JSON 响应`);
+      }
+      if (!res.ok) {
+        const msg = String(
+          json.message || json.error?.message || (typeof json.error === "string" ? json.error : "") ||
+            `HTTP ${res.status}`
+        );
+        if (/params check error|check error|limit exceeded|result too large|too many|exceed/i.test(msg)) {
+          throw new LimitError(msg);
+        }
+        throw new Error(`HTTP ${res.status}: ${msg}`);
+      }
       if (json.error) {
         const msg = String(json.error.message || "");
         if (/limit exceeded|result too large|max|range|window|too many|more than|exceed/i.test(msg)) {
@@ -223,7 +252,12 @@ function normalizeLog(raw) {
   const tokenId = topics[1].toLowerCase();
   const owner = topicToAddress(topics[2].toLowerCase());
   if (!tx || !owner.startsWith("0x")) return null;
-  return { name, owner, tokenId, block, tx, ts: null };
+  // OKX NodeOne 的日志响应自带 blockTimestamp 扩展字段,有则省去逐块查时间戳
+  const ts =
+    typeof raw.blockTimestamp === "string" && raw.blockTimestamp.startsWith("0x")
+      ? parseInt(raw.blockTimestamp, 16)
+      : null;
+  return { name, owner, tokenId, block, tx, ts };
 }
 
 // ---------- 主流程 ----------
@@ -283,6 +317,7 @@ function absorbLogs(logs) {
     const analysis = analyzeName(rec.name);
     const entry = { ...rec, score: analysis.score, tags: analysis.tags, label: analysis.label };
     const prev = byName.get(entry.name);
+    if (prev && entry.ts == null && prev.ts != null) entry.ts = prev.ts; // 不覆盖已有时间戳
     if (!prev) {
       byName.set(entry.name, entry);
       newNames++;
@@ -297,6 +332,7 @@ function absorbLogs(logs) {
 
 async function scanRange(fromBlock, toBlock) {
   let window = INITIAL_WINDOW;
+  const txCountCache = new Map(); // 探针结果缓存,减半重试时避免重复查询同一块
   let cur = fromBlock;
   let lastDone = fromBlock - 1;
   while (cur <= toBlock) {
@@ -326,15 +362,47 @@ async function scanRange(fromBlock, toBlock) {
         `\r已扫至 ${cur - 1} / ${toBlock}(窗口 ${window},调用 ${callCount})    `
       );
     } catch (e) {
-      if (e instanceof LimitError) {
-        window = Math.max(1, Math.floor(window / 2)); // 限窗/超限:减半重试
+      if (e instanceof LimitError && window <= MIN_WINDOW) {
+        // 最小窗口仍超限。两种可能(OKX NodeOne 行为):(1) 该窗口内日志量超网关
+        // 上限(真丢数据);(2) 网关对空结果也回 403。每块注册笔数 ≤ 块内总交易数,
+        // 故用交易数探针区分:总交易数低于日志上限 ⇒ 必然是空结果,安全跳过。
+        const span = end - cur + 1;
+        let totalTx = 0;
+        let probeOk = true;
+        for (let b = cur; b <= end; b++) {
+          if (txCountCache.has(b)) {
+            totalTx += txCountCache.get(b);
+            continue;
+          }
+          try {
+            const blk = await rpcCall("eth_getBlockByNumber", ["0x" + b.toString(16), false]);
+            const n = Array.isArray(blk?.transactions) ? blk.transactions.length : 500;
+            txCountCache.set(b, n);
+            totalTx += n;
+          } catch {
+            probeOk = false;
+            break;
+          }
+        }
+        lastDone = end;
+        cur = end + 1;
+        window = Math.min(MAX_WINDOW, Math.max(MIN_WINDOW * 8, window * 16)); // 空区段快速跳窗
+        if (!probeOk) {
+          log(`\n区块 ${cur - span}-${cur - 1} 探针失败,按跳过处理`);
+        } else if (totalTx >= 1500) {
+          log(`\n窗口 ${cur - span}-${cur - 1} 交易数 ${totalTx} 达峰值量级,日志超网关上限,可能丢失该窗口靓号`);
+        }
+        // totalTx < 1500:必为空结果(或近空),静默跳过即可
+      } else if (e instanceof LimitError) {
+        window = Math.max(MIN_WINDOW, Math.floor(window / 2)); // 限窗/超限:减半重试
         log(`\n窗口超限(${e.message}),窗口降至 ${window}`);
-      } else if (window > 1) {
-        window = Math.max(1, Math.floor(window / 2));
+      } else if (window > MIN_WINDOW) {
+        window = Math.max(MIN_WINDOW, Math.floor(window / 2));
         log(`\n扫描失败,窗口降至 ${window} 重试: ${e.message}`);
       } else {
-        log(`\n单块 ${cur} 扫描失败,跳过: ${e.message}`);
-        cur++; // 避免死锁
+        log(`\n区块 ${cur}-${end} 扫描失败,跳过: ${e.message}`);
+        lastDone = end;
+        cur = end + 1; // 避免死锁
       }
     }
   }

@@ -38,6 +38,9 @@ node scripts/index.mjs --blocks 2000
 公共 RPC 限流严重,索引器内置:多节点轮询(请求间隔 ≥1.2s)、
 窗口自适应(初始 4000 块,超限自动减半、成功后缓慢回升)、
 单轮 6 分钟时间预算与 200 次调用上限(到点保存进度退出,留给下一轮)。
+预算可用环境变量调整:`INDEX_MIN_INTERVAL_MS`、`INDEX_TIME_BUDGET_MS`、
+`INDEX_MAX_CALLS`、`INDEX_TS_BACKFILL_CAP`(本地一次性全量补扫时调大,
+例如 `INDEX_MAX_CALLS=6000 INDEX_TIME_BUDGET_MS=5400000`)。
 
 可配置带 key 的 RPC(见 `.env.example` 的 `BSC_RPC_URLS`,多个用逗号分隔),
 会排在公共节点之前优先使用。注意:BscScan/Etherscan 的免费 API key
