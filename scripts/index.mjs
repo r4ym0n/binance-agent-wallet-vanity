@@ -1,0 +1,453 @@
+#!/usr/bin/env node
+// .ai 靓号索引器:扫描 SPACE ID Agent ID 注册合约的 NameRegistered 事件,
+// 用共享规则库过滤靓号,产出 data/vanity.json 与 data/stats.json。
+//
+// 用法:
+//   node scripts/index.mjs            # 增量扫描(从 state.json 记录处继续)
+//   node scripts/index.mjs --blocks N # 只扫最近 N 块(本地验证用,不回写 lastIndexedBlock)
+//
+// 环境变量:
+//   BSCSCAN_API_KEY 可选;设置后优先走 Bscscan getLogs API(无窗口限制,分页),
+//   去 https://bscscan.com/apis 免费申请。
+//
+// 公共 RPC 限流严重:所有请求间隔 ≥1.2s,单轮运行上限 6 分钟,RPC 多节点轮询。
+
+import { mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const DATA_DIR = path.join(ROOT, "data");
+const STATE_FILE = path.join(DATA_DIR, "state.json");
+const VANITY_FILE = path.join(DATA_DIR, "vanity.json");
+const STATS_FILE = path.join(DATA_DIR, "stats.json");
+
+const CONTRACT = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f";
+const NAME_REGISTERED_TOPIC =
+  "0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5";
+const START_BLOCK = 128589000;
+
+const RPCS = [
+  "https://bsc-dataseed.binance.org",
+  "https://bsc-dataseed1.defibit.io",
+  "https://bsc-rpc.publicnode.com",
+  "https://binance.llamarpc.com",
+  "https://bsc.drpc.org",
+  "https://bsc-mainnet.public.blastapi.io",
+];
+
+const MIN_INTERVAL_MS = 1200; // 请求间隔下限
+const TIME_BUDGET_MS = 6 * 60 * 1000; // 单轮最多 6 分钟
+const MAX_CALLS = 200; // 单轮 RPC 调用次数上限
+const RPC_TIMEOUT_MS = 20000;
+const MAX_WINDOW = 10000;
+const INITIAL_WINDOW = 4000;
+const TS_BACKFILL_CAP = 60; // 时间戳补录最多查多少个块
+
+// 规则库:优先直接 import 共享的 TS(Node 26 原生 type stripping);
+// 若失败则退化为下方复制的同逻辑实现,保证脚本始终可运行。
+let analyzeName;
+let isVanityRelevant;
+try {
+  ({ analyzeName, isVanityRelevant } = await import("../src/lib/vanity.ts"));
+  log("已加载共享规则库 src/lib/vanity.ts");
+} catch (e) {
+  log(`import ../src/lib/vanity.ts 失败(${e.message}),退化为脚本内置副本`);
+  ({ analyzeName, isVanityRelevant } = vanityFallback());
+}
+
+function vanityFallback() {
+  // 与 src/lib/vanity.ts 保持一致的精简副本(仅在此文件内维护,改动需同步)。
+  const labelOf = (s) =>
+    s >= 80 ? "极品" : s >= 60 ? "罕见" : s >= 40 ? "精品" : s >= 20 ? "优质" : "普通";
+  const analyzeName = (name) => {
+    const tags = [];
+    let score = 0;
+    const len = name.length;
+    const digitsOnly = /^[0-9]+$/.test(name);
+    const lettersOnly = /^[a-z]+$/.test(name);
+    const alnumOnly = /^[a-z0-9]+$/.test(name);
+    if (digitsOnly) {
+      if (len <= 3) { score += 50; tags.push("3D"); }
+      else if (len === 4) { score += 40; tags.push("4D"); }
+      else if (len === 5) { score += 30; tags.push("5D"); }
+      else if (len === 6) { score += 22; tags.push("6D"); }
+      else if (len === 7) { score += 16; tags.push("7D"); }
+      else if (len === 8) { score += 10; tags.push("8D"); }
+    } else if (lettersOnly) {
+      if (len <= 3) { score += 45; tags.push("3L"); }
+      else if (len === 4) { score += 30; tags.push("4L"); }
+    } else if (alnumOnly && len <= 4) {
+      score += len <= 3 ? 35 : 18;
+      tags.push("4N");
+    }
+    const uniform = (s) => s.split("").every((c) => c === s[0]);
+    let matchedAbba = false;
+    if ((digitsOnly || lettersOnly) && len >= 2) {
+      if (len >= 4 && uniform(name)) { score += 25; tags.push("AAAA"); }
+      else if (len >= 3 && uniform(name)) { score += 15; tags.push("AAA"); }
+      else if (len === 4) {
+        const [a, b, c, d] = name.split("");
+        if (a === c && b === d && a !== b) { score += 18; tags.push("ABAB"); }
+        if (a === b && c === d && a !== c) { score += 12; tags.push("AABB"); }
+        if (a === d && b === c && a !== b) { score += 12; tags.push("ABBA"); matchedAbba = true; }
+      }
+      if (len === 6 && name.slice(0, 3) === name.slice(3)) { score += 14; tags.push("ABCABC"); }
+      if (digitsOnly && len >= 3) {
+        const ds = name.split("").map(Number);
+        const inc = ds.every((v, i) => i === 0 || v === ds[i - 1] + 1);
+        const dec = ds.every((v, i) => i === 0 || v === ds[i - 1] - 1);
+        if (inc) { score += 20; tags.push("顺子"); }
+        else if (dec) { score += 18; tags.push("倒序"); }
+      }
+      const rev = name.split("").reverse().join("");
+      if (len >= 3 && name === rev && !uniform(name) && !matchedAbba) { score += 18; tags.push("回文"); }
+    }
+    if (name.includes("520")) { score += 10; tags.push("520"); }
+    if (name.includes("1314")) { score += 10; tags.push("1314"); }
+    if (name.includes("168")) { score += 8; tags.push("168"); }
+    if (name.includes("888")) { score += 6; tags.push("含888"); }
+    if (name.includes("666")) { score += 4; tags.push("含666"); }
+    if (/^(19|20)\d{2}$/.test(name)) {
+      const y = Number(name);
+      if (y >= 1990 && y <= 2029) { score += 6; tags.push("年份"); }
+    }
+    if (name === "42") { score += 10; tags.push("42"); }
+    if (name.includes("-")) score -= 10;
+    score = Math.max(0, Math.min(100, score));
+    return { score, tags, label: labelOf(score) };
+  };
+  const isVanityRelevant = (name) => {
+    if (name.length <= 5) return true;
+    if (/^[0-9]+$/.test(name) && name.length <= 8) return true;
+    return analyzeName(name).score >= 20;
+  };
+  return { analyzeName, isVanityRelevant };
+}
+
+// ---------- 工具 ----------
+
+function log(...args) {
+  console.log(new Date().toISOString(), ...args);
+}
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+let lastRequestAt = 0;
+let callCount = 0;
+
+async function throttle() {
+  const now = Date.now();
+  const wait = lastRequestAt + MIN_INTERVAL_MS - now;
+  if (wait > 0) await sleep(wait);
+  lastRequestAt = Date.now();
+}
+
+class LimitError extends Error {}
+
+let rpcIdx = 0;
+
+async function rpcCall(method, params) {
+  let lastErr;
+  for (let attempt = 0; attempt < RPCS.length; attempt++) {
+    if (callCount >= MAX_CALLS) throw new Error("调用次数已达上限");
+    const url = RPCS[rpcIdx % RPCS.length];
+    rpcIdx++;
+    await throttle();
+    callCount++;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: callCount,
+          method,
+          params,
+        }),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const json = await res.json();
+      if (json.error) {
+        const msg = String(json.error.message || "");
+        if (/limit exceeded|result too large|max|range|window|too many|more than|exceed/i.test(msg)) {
+          throw new LimitError(msg);
+        }
+        throw new Error(`RPC ${json.error.code}: ${msg}`);
+      }
+      return json.result;
+    } catch (e) {
+      lastErr = e;
+      log(`RPC 节点失败 [${new URL(url).host}] ${method}: ${e.message}`);
+      if (e instanceof LimitError) throw e; // 限窗错误不重试其它节点,交给窗口自适应
+    }
+  }
+  throw lastErr || new Error("所有 RPC 节点均失败");
+}
+
+// ---------- Bscscan API(可选,优先) ----------
+
+const BSCSCAN_KEY = process.env.BSCSCAN_API_KEY || "";
+
+async function bscscanGetLogs(fromBlock, toBlock) {
+  const all = [];
+  let page = 1;
+  for (;;) {
+    if (callCount >= MAX_CALLS) throw new Error("调用次数已达上限");
+    await throttle();
+    callCount++;
+    const url =
+      `https://api.bscscan.com/api?module=logs&action=getLogs` +
+      `&address=${CONTRACT}&topic0=${NAME_REGISTERED_TOPIC}` +
+      `&fromBlock=${fromBlock}&toBlock=${toBlock}` +
+      `&page=${page}&offset=1000&apikey=${BSCSCAN_KEY}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.status !== "1") {
+      if (json.message === "No records found") return all;
+      throw new Error(`bscscan: ${json.message} ${json.result || ""}`);
+    }
+    const logs = Array.isArray(json.result) ? json.result : [];
+    all.push(...logs);
+    if (logs.length < 1000) return all;
+    page++;
+  }
+}
+
+// ---------- 日志解析 ----------
+
+function topicToAddress(topic) {
+  // topics[2] 是 32 字节地址(左填充 12 字节)
+  return "0x" + topic.slice(26).toLowerCase();
+}
+
+function dataToString(data) {
+  // ABI 编码 string:offset(32B) + length(32B) + utf8 数据
+  const buf = Buffer.from(data.replace(/^0x/, ""), "hex");
+  if (buf.length < 64) return null;
+  const offset = Number(BigInt("0x" + buf.subarray(0, 32).toString("hex")));
+  const len = Number(BigInt("0x" + buf.subarray(offset, offset + 32).toString("hex")));
+  const strBuf = buf.subarray(offset + 32, offset + 32 + len);
+  if (strBuf.length < len) return null;
+  return strBuf.toString("utf8");
+}
+
+function normalizeLog(raw) {
+  // bscscan 返回 blockNumber/transactionHash 等带 0x 前缀字符串
+  const topics = raw.topics;
+  if (!topics || topics.length < 3) return null;
+  if (topics[0].toLowerCase() !== NAME_REGISTERED_TOPIC) return null;
+  const name = dataToString(raw.data);
+  if (!name || !/^[a-z0-9-]{1,32}$/.test(name)) return null;
+  const block = parseInt(raw.blockNumber, 16);
+  const tx = (raw.transactionHash || "").toLowerCase();
+  const tokenId = topics[1].toLowerCase();
+  const owner = topicToAddress(topics[2].toLowerCase());
+  if (!tx || !owner.startsWith("0x")) return null;
+  return { name, owner, tokenId, block, tx, ts: null };
+}
+
+// ---------- 主流程 ----------
+
+async function loadJson(file, fallback) {
+  try {
+    return JSON.parse(await readFile(file, "utf8"));
+  } catch {
+    return fallback;
+  }
+}
+
+async function saveJson(file, value) {
+  await writeFile(file, JSON.stringify(value, null, 2) + "\n");
+}
+
+async function fetchHeadBlock() {
+  const hex = await rpcCall("eth_blockNumber", []);
+  return parseInt(hex, 16);
+}
+
+async function fetchBlockTimestamp(blockNumber) {
+  const block = await rpcCall("eth_getBlockByNumber", [
+    "0x" + blockNumber.toString(16),
+    false,
+  ]);
+  if (!block || !block.timestamp) return null;
+  return parseInt(block.timestamp, 16);
+}
+
+const startedAt = Date.now();
+const recentOnly = process.argv.includes("--blocks");
+const blocksArgIdx = process.argv.indexOf("--blocks");
+const recentBlocks =
+  blocksArgIdx > -1 ? parseInt(process.argv[blocksArgIdx + 1], 10) : 0;
+
+let state = await loadJson(STATE_FILE, {
+  lastIndexedBlock: START_BLOCK - 1,
+  scannedUntil: START_BLOCK - 1,
+});
+let vanity = await loadJson(VANITY_FILE, []);
+if (!Array.isArray(vanity)) vanity = [];
+
+// name -> 记录;同名保留最早注册者(最早 block)
+const byName = new Map();
+for (const rec of vanity) byName.set(rec.name, rec);
+
+let newNames = 0;
+let scannedLogs = 0;
+
+function absorbLogs(logs) {
+  for (const raw of logs) {
+    scannedLogs++;
+    const rec = normalizeLog(raw);
+    if (!rec) continue;
+    if (!isVanityRelevant(rec.name)) continue;
+    const analysis = analyzeName(rec.name);
+    const entry = { ...rec, score: analysis.score, tags: analysis.tags, label: analysis.label };
+    const prev = byName.get(entry.name);
+    if (!prev) {
+      byName.set(entry.name, entry);
+      newNames++;
+    } else if (entry.block < prev.block) {
+      // 同名重复注册:保留先注册者,但仍以最新规则重算
+      byName.set(entry.name, { ...prev, ...entry });
+    } else {
+      byName.set(entry.name, { ...prev, score: entry.score, tags: entry.tags, label: entry.label });
+    }
+  }
+}
+
+async function scanRange(fromBlock, toBlock) {
+  if (BSCSCAN_KEY) {
+    log(`使用 Bscscan API 扫描 ${fromBlock} -> ${toBlock}`);
+    const logs = await bscscanGetLogs(fromBlock, toBlock);
+    absorbLogs(logs);
+    return toBlock;
+  }
+  let window = INITIAL_WINDOW;
+  let cur = fromBlock;
+  let lastDone = fromBlock - 1;
+  while (cur <= toBlock) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS) {
+      log("达到单轮时间预算,保存进度退出");
+      break;
+    }
+    if (callCount >= MAX_CALLS) {
+      log("达到单轮调用次数上限,保存进度退出");
+      break;
+    }
+    const end = Math.min(cur + window - 1, toBlock);
+    try {
+      const logs = await rpcCall("eth_getLogs", [
+        {
+          address: CONTRACT,
+          topics: [NAME_REGISTERED_TOPIC],
+          fromBlock: "0x" + cur.toString(16),
+          toBlock: "0x" + end.toString(16),
+        },
+      ]);
+      absorbLogs(Array.isArray(logs) ? logs : []);
+      lastDone = end;
+      cur = end + 1;
+      window = Math.min(MAX_WINDOW, Math.ceil(window * 1.25)); // 成功后缓慢回升
+      process.stdout.write(
+        `\r已扫至 ${cur - 1} / ${toBlock}(窗口 ${window},调用 ${callCount})    `
+      );
+    } catch (e) {
+      if (e instanceof LimitError) {
+        window = Math.max(1, Math.floor(window / 2)); // 限窗/超限:减半重试
+        log(`\n窗口超限(${e.message}),窗口降至 ${window}`);
+      } else if (window > 1) {
+        window = Math.max(1, Math.floor(window / 2));
+        log(`\n扫描失败,窗口降至 ${window} 重试: ${e.message}`);
+      } else {
+        log(`\n单块 ${cur} 扫描失败,跳过: ${e.message}`);
+        cur++; // 避免死锁
+      }
+    }
+  }
+  process.stdout.write("\n");
+  return lastDone;
+}
+
+// ---------- 执行 ----------
+
+await mkdir(DATA_DIR, { recursive: true });
+
+const head = await fetchHeadBlock();
+log(`当前区块高度: ${head}`);
+
+let from;
+let to;
+if (recentOnly && recentBlocks > 0) {
+  from = Math.max(START_BLOCK, head - recentBlocks + 1);
+  to = head;
+  log(`--blocks 模式:仅扫描最近 ${recentBlocks} 块(${from} -> ${to}),不回写索引进度`);
+} else {
+  from = Math.max(START_BLOCK, (state.lastIndexedBlock || START_BLOCK - 1) + 1);
+  to = head;
+  log(`增量扫描: ${from} -> ${to}`);
+}
+
+let scannedUntil = state.scannedUntil || START_BLOCK - 1;
+let lastIndexedBlock = state.lastIndexedBlock || START_BLOCK - 1;
+
+if (from <= to) {
+  const done = await scanRange(from, to);
+  scannedUntil = Math.max(scannedUntil, done);
+  if (!(recentOnly && recentBlocks > 0)) {
+    lastIndexedBlock = Math.max(lastIndexedBlock, done);
+  }
+} else {
+  log("已是最新,无需扫描");
+  if (!(recentOnly && recentBlocks > 0)) lastIndexedBlock = Math.max(lastIndexedBlock, to);
+  scannedUntil = Math.max(scannedUntil, to);
+}
+
+// 时间戳补录:只对收录的名字、同名块去重,限流
+const needTs = [...byName.values()].filter((r) => r.ts == null);
+const tsByBlock = new Map();
+for (const r of needTs) if (!tsByBlock.has(r.block)) tsByBlock.set(r.block, []);
+for (const r of needTs) tsByBlock.get(r.block).push(r);
+
+if (tsByBlock.size > 0 && !BSCSCAN_KEY) {
+  log(`补录 ${Math.min(tsByBlock.size, TS_BACKFILL_CAP)}/${tsByBlock.size} 个区块的时间戳`);
+  let filled = 0;
+  for (const [block, recs] of [...tsByBlock.entries()].slice(0, TS_BACKFILL_CAP)) {
+    if (Date.now() - startedAt > TIME_BUDGET_MS || callCount >= MAX_CALLS) break;
+    try {
+      const ts = await fetchBlockTimestamp(block);
+      if (ts != null) for (const r of recs) r.ts = ts;
+      filled++;
+    } catch (e) {
+      log(`区块 ${block} 时间戳获取失败: ${e.message}`);
+    }
+  }
+  log(`时间戳补录完成 ${filled} 个区块`);
+}
+
+// 写文件:按 score 降序,block 升序作次序稳定的次关键字
+const merged = [...byName.values()].sort(
+  (a, b) => b.score - a.score || a.block - b.block || a.name.localeCompare(b.name)
+);
+await saveJson(VANITY_FILE, merged);
+
+const owners = new Set(merged.map((r) => r.owner));
+const stats = {
+  lastIndexedBlock,
+  lastSync: new Date().toISOString(),
+  totalVanity: merged.length,
+  totalOwners: owners.size,
+};
+await saveJson(STATS_FILE, stats);
+
+if (!(recentOnly && recentBlocks > 0)) {
+  await saveJson(STATE_FILE, { lastIndexedBlock, scannedUntil });
+}
+
+log(
+  `完成:解析日志 ${scannedLogs} 条,新增收录 ${newNames} 个,累计收录 ${merged.length} 个,` +
+    `持有者 ${owners.size} 个,RPC 调用 ${callCount} 次,用时 ${((Date.now() - startedAt) / 1000).toFixed(1)}s`
+);
