@@ -127696,6 +127696,19 @@
     "label": "优质"
   },
   {
+    "name": "jubo",
+    "owner": "0xc7ed7f4b7ea69233f7ab52a0c96da55418cc4831",
+    "tokenId": "0x6656cb95c82b5ba02f4367fd5f624bf3d6538f92eed2fd083ebde4a7bebf336f",
+    "block": 128921617,
+    "tx": "0xbbaa767b4499e82d9c01a6c644de7b06fc09f3aee4284d419cd23dd2f0d415dd",
+    "ts": 1792578303,
+    "score": 30,
+    "tags": [
+      "4L"
+    ],
+    "label": "优质"
+  },
+  {
     "name": "666666666666",
     "owner": "0xfd34781c15b0984f7fe385e10761edc15719d1c0",
     "tokenId": "0x752ab9d6066413958ac07c337ce30aac7bd5188f142905aad4ffb24d8f91b133",
@@ -195135,6 +195148,17 @@
     "block": 128921555,
     "tx": "0xa870239e7fd8a9e55a50b2afa00dd16d8aab03f0675db58dc6aa252b21d2284b",
     "ts": 1792578275,
+    "score": 0,
+    "tags": [],
+    "label": "普通"
+  },
+  {
+    "name": "haziq",
+    "owner": "0x520b73d5377da0f3303cb4d90a3f974ca962864a",
+    "tokenId": "0xdbceb24f6a33563ed47a40a8d8a9906efc3c7ce9bbc2a24eec1b17880358118e",
+    "block": 128921597,
+    "tx": "0x60e1a36732b62fc1bd75ded1db97647f837c592d54886103453328bc8e04cf11",
+    "ts": 1792578294,
     "score": 0,
     "tags": [],
     "label": "普通"
