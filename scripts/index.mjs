@@ -30,10 +30,8 @@ const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const CONTRACT = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f";
 const NAME_REGISTERED_TOPIC =
   "0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5";
-// 首个注册区块在 (128583743, 128589138] 之间(OKX 空窗 403 二分定位下界,
-// 128589138 是已验证 claim 交易所在块);取 128584000 留少量前缀余量,
-// 如需更早可前移并删除 data/state.json 重扫
-const START_BLOCK = 128584000;
+// 首个注册区块 128733522(NodeReal 精确二分定位;128737618 为已验证的 403.ai claim 交易块)
+const START_BLOCK = 128733500;
 
 // BSC_RPC_URLS 环境变量里的节点(带 key 的付费/免费层)排在最前优先使用
 const RPCS = [
