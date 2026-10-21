@@ -63124,6 +63124,19 @@
     "label": "精品"
   },
   {
+    "name": "cve",
+    "owner": "0x2f3faa914264b11a8525770f560d17ea88675edc",
+    "tokenId": "0x8764a35fb6723be686c871fcb963e9642cf08f45d891301c8a884c37ed239cbe",
+    "block": 128908468,
+    "tx": "0x0b2e1ccef57fa1ebe9d8b662ab9cb3082e9ddf7ad79214c691bee1ad12408800",
+    "ts": 1792572382,
+    "score": 45,
+    "tags": [
+      "3L"
+    ],
+    "label": "精品"
+  },
+  {
     "name": "6669",
     "owner": "0x86963480e404471ef4acb4ee9fef12cb8397735d",
     "tokenId": "0x94220f941b03e022e8ba780685c3a540ec7afa9783804afa0f123b48b1cc0d6a",
@@ -124307,6 +124320,19 @@
     "block": 128908172,
     "tx": "0xae5114dad16b93020ef6320e93a6e9385a2c5c7253fa7152cd7b44f4c8468559",
     "ts": 1792572249,
+    "score": 30,
+    "tags": [
+      "5D"
+    ],
+    "label": "优质"
+  },
+  {
+    "name": "56772",
+    "owner": "0x56517a9a19ff2a7b4f93b92431185785ea15a4a0",
+    "tokenId": "0xcccfb9633b27b702e43416a1284523c680081dcc1a270ebf7b58a4f9eeed304c",
+    "block": 128908473,
+    "tx": "0x1708344fb5dcbc6f6162da27f36992e82cc8af71784ed233468d3a6fe0377d8a",
+    "ts": 1792572385,
     "score": 30,
     "tags": [
       "5D"
