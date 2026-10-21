@@ -44,11 +44,15 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
-async function NameDetail(props: PageProps<"/name/[name]">) {
-  const [{ name }, locale] = await Promise.all([props.params, getLocale()]);
+async function NameDetail({
+  name,
+  record,
+}: {
+  name: string;
+  record: NonNullable<Awaited<ReturnType<typeof getVanityByName>>>;
+}) {
+  const locale = await getLocale();
   const t = getDict(locale);
-  const record = await getVanityByName(name);
-  if (!record) notFound();
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-12">
@@ -136,10 +140,17 @@ async function NameDetail(props: PageProps<"/name/[name]">) {
   );
 }
 
-export default function NamePage(props: PageProps<"/name/[name]">) {
+export default async function NamePage(props: PageProps<"/name/[name]">) {
+  // 查表放在 Suspense 外:getVanityByName 走 "use cache" 不读 cookies,
+  // 未收录时在此 notFound() 才能返回真正的 404 状态码(Suspense 内
+  // notFound 只会流式替换内容,HTTP 状态仍是 200,成为 soft 404)。
+  const { name } = await props.params;
+  const record = await getVanityByName(name);
+  if (!record) notFound();
+
   return (
     <Suspense fallback={<div className="mx-auto max-w-3xl px-4 py-12 text-sm text-zinc-500">Loading…</div>}>
-      <NameDetail {...props} />
+      <NameDetail name={name} record={record} />
     </Suspense>
   );
 }
