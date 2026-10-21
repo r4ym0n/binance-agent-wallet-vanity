@@ -127774,6 +127774,19 @@
     "label": "优质"
   },
   {
+    "name": "jury",
+    "owner": "0xc1ea0e4480fa4e2c1e5c0ceee1055b870474b672",
+    "tokenId": "0x543a13fa1544b8dd5b1be35a75489c2b6d414b3924188cf910a6dca204d33279",
+    "block": 128921937,
+    "tx": "0x2f67f4a199c06f7196b27633bd7b17dad54d21beccfb55ded7b5942c438de0ce",
+    "ts": 1792578447,
+    "score": 30,
+    "tags": [
+      "4L"
+    ],
+    "label": "优质"
+  },
+  {
     "name": "666666666666",
     "owner": "0xfd34781c15b0984f7fe385e10761edc15719d1c0",
     "tokenId": "0x752ab9d6066413958ac07c337ce30aac7bd5188f142905aad4ffb24d8f91b133",
@@ -195274,6 +195287,17 @@
     "block": 128921822,
     "tx": "0x2fb699058ccd080f0a9d377b30c1bd737faf38581e8f5adc7eec6692795c318d",
     "ts": 1792578395,
+    "score": 0,
+    "tags": [],
+    "label": "普通"
+  },
+  {
+    "name": "yoooi",
+    "owner": "0x888284e6f14bbf5c11714c115dd3fc9a9afff4d9",
+    "tokenId": "0x9af85111d293a6512cf7401e934461102dede2d42cf39ef5139bf3ef9a6287dd",
+    "block": 128921916,
+    "tx": "0xc46701238f2771715db41888215ae97290a836c23a5ea1ba561afb746132e857",
+    "ts": 1792578437,
     "score": 0,
     "tags": [],
     "label": "普通"
