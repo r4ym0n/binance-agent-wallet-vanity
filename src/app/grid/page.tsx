@@ -1,8 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
-import GridMatrix, { type GridDetail } from "@/components/GridMatrix";
+import GridMatrix from "@/components/GridMatrix";
 import { getVanity } from "@/lib/data";
-import { formatTime } from "@/lib/format";
 import { getDict } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 
@@ -54,21 +53,13 @@ async function GridBody() {
     { ...gen[2], size: 17576, cell: 7, gap: 2 },
   ];
 
-  // 只对三个全集内的名字构建 hover 详情,避免序列化全量索引
-  const details: Record<string, GridDetail> = {};
+  // 只传三个全集内已注册的名字用于着色(约 5k 个字符串,~25KB);
+  // 悬停详情由客户端按需请求 /api/name-detail,不再内联进页面
   const inSpace = (name: string) =>
     /^[0-9]{3}$/.test(name) ||
     /^[0-9]{4}$/.test(name) ||
     /^[a-z]{3}$/.test(name);
-  for (const r of vanity) {
-    if (!inSpace(r.name)) continue;
-    details[r.name] = {
-      label: t.labels[r.label] ?? r.label,
-      score: r.score,
-      owner: r.owner,
-      time: formatTime(r.ts, t.check.unknown),
-    };
-  }
+  const registered = vanity.filter((r) => inSpace(r.name)).map((r) => r.name);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -77,7 +68,7 @@ async function GridBody() {
         {t.grid.intro}
       </p>
       <div className="mt-6">
-        <GridMatrix categories={categories} details={details} locale={locale} />
+        <GridMatrix categories={categories} registered={registered} locale={locale} />
       </div>
     </div>
   );

@@ -44,15 +44,22 @@ jobs:
 
       # push 前先 rebase:push 触发与 schedule 触发的运行可能基于同一旧提交,
       # 链上已有新提交时直接 push 会被拒(曾因竞态断链)。
-      - name: 提交数据变更并推送(有实质变化才触发链上下一轮)
+      # 部署频率控制:只有 vanity.json 有变化(新收录靓号)才提交部署;否则
+      # 距上次数据提交满 2 小时兜底提交一次(保持首页同步时间新鲜)。
+      # 曾每次 lastIndexedBlock 前进都提交 → 每天近百次全量部署。
+      - name: 提交数据变更并推送(有新收录或 2h 心跳才部署)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
-          if [ -n "$(git status --porcelain data/)" ]; then
+          VANITY_CHANGED=no
+          git diff --cached --name-only data/ | grep -q '^data/vanity\.json$' && VANITY_CHANGED=yes
+          LAST_DATA_COMMIT=$(git log -1 --format=%ct -- data/ || echo 0)
+          HEARTBEAT_DUE=$(( $(date +%s) - ${LAST_DATA_COMMIT:-0} > 7200 ))
+          if { [ "$VANITY_CHANGED" = "yes" ] || [ "$HEARTBEAT_DUE" = "1" ]; } && [ -n "$(git status --porcelain data/)" ]; then
             git commit -m "chore: 更新链上靓号索引数据"
             git pull --rebase origin main
             git push
           else
-            echo "data/ 无实质变更,链条本轮停歇"
+            echo "无新收录且距上次数据提交不足 2h,跳过提交(链条本轮停歇)"
           fi

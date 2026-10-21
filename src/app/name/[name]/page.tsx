@@ -15,10 +15,11 @@ import {
 
 const zh = getDict("zh");
 
-export async function generateStaticParams() {
-  const vanity = await getVanity();
-  return vanity.map((r) => ({ name: r.name }));
-}
+// 不预渲染 1.2 万个详情页:按需渲染(getVanityByName 带 300s cacheLife,
+// 命中即缓存),否则每次部署的产物里都带着 1.2 万页的 HTML/RSC,
+// 部署存储轻松冲破 Hobby 10GB 的 Deployment Storage 上限,且每次构建要 4 分钟。
+// 不设 generateStaticParams 即为按需渲染;缓存由 getVanityByName 的
+// cacheLife(300s) 负责。
 
 export async function generateMetadata(
   props: PageProps<"/name/[name]">

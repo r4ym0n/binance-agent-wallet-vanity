@@ -12,7 +12,13 @@ interface GridCategory {
   gap: number;
 }
 
-export interface GridDetail {
+interface Hover {
+  name: string;
+  x: number;
+  y: number;
+}
+
+interface GridDetail {
   label: string;
   score: number;
   owner: string;
@@ -32,19 +38,14 @@ function genName(key: string, i: number): string {
   return String(i).padStart(key === "3D" ? 3 : 4, "0");
 }
 
-interface Hover {
-  name: string;
-  x: number;
-  y: number;
-}
-
 export default function GridMatrix({
   categories,
-  details,
+  registered,
   locale,
 }: {
   categories: GridCategory[];
-  details: Record<string, GridDetail>;
+  /** 三个全集内已注册的名字(仅用于点阵着色) */
+  registered: string[];
   locale: Locale;
 }) {
   const t: Dict = getDict(locale);
@@ -52,12 +53,13 @@ export default function GridMatrix({
   const [vacancyOnly, setVacancyOnly] = useState(false);
   const [hover, setHover] = useState<Hover | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
+  // 已注册格子的详情改为悬停时按需拉取(/api/name-detail),客户端缓存防重复请求
+  const detailCache = useRef(new Map<string, GridDetail | null>());
+  const hoverRef = useRef<string | null>(null);
+  const [detail, setDetail] = useState<GridDetail | null>(null);
 
   const cat = categories.find((c) => c.key === activeKey) ?? categories[0];
-  const registeredSet = useMemo(
-    () => new Set(Object.keys(details)),
-    [details]
-  );
+  const registeredSet = useMemo(() => new Set(registered), [registered]);
 
   const cols = Math.ceil(Math.sqrt(cat.size));
   const { cell, gap } = cat;
@@ -74,7 +76,27 @@ export default function GridMatrix({
   function handleEnter(name: string, e: React.MouseEvent) {
     const rect = wrapRef.current?.getBoundingClientRect();
     if (!rect) return;
+    hoverRef.current = name;
     setHover({ name, x: e.clientX - rect.left, y: e.clientY - rect.top });
+    if (registeredSet.has(name)) {
+      if (detailCache.current.has(name)) {
+        setDetail(detailCache.current.get(name) ?? null);
+      } else {
+        setDetail(null);
+        fetch(`/api/name-detail?name=${encodeURIComponent(name)}`)
+          .then((r) => r.json())
+          .then((d: { detail: GridDetail | null }) => {
+            detailCache.current.set(name, d.detail);
+            // 只有仍悬停在同一格时才更新,避免快速移动被旧响应覆盖
+            setDetail((cur) =>
+              hoverRef.current === name ? d.detail : cur
+            );
+          })
+          .catch(() => detailCache.current.set(name, null));
+      }
+    } else {
+      setDetail(null);
+    }
   }
 
   return (
@@ -194,7 +216,7 @@ export default function GridMatrix({
             <HoverBody
               name={hover.name}
               registered={registeredSet.has(hover.name)}
-              details={details}
+              detail={detail}
               t={t}
             />
           </div>
@@ -207,12 +229,12 @@ export default function GridMatrix({
 function HoverBody({
   name,
   registered,
-  details,
+  detail,
   t,
 }: {
   name: string;
   registered: boolean;
-  details: Record<string, GridDetail>;
+  detail: GridDetail | null;
   t: Dict;
 }) {
   if (!registered) {
@@ -226,8 +248,18 @@ function HoverBody({
       </div>
     );
   }
-  const d = details[name];
-  if (!d) return null;
+  if (!detail) {
+    return (
+      <div>
+        <div className="font-mono text-lg font-bold text-gold">
+          {name}
+          <span className="text-sm font-normal text-zinc-500">.ai</span>
+        </div>
+        <p className="mt-1 text-xs text-zinc-500">Loading…</p>
+      </div>
+    );
+  }
+  const d = detail;
   return (
     <div>
       <div className="flex items-center justify-between gap-2">
