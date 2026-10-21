@@ -29,6 +29,9 @@ const zh = {
     statOwners: "独立持有者",
     statBlock: "最新同步区块",
     statSync: "同步时间",
+    syncJustNow: "刚刚",
+    syncMinutesAgo: (m: number) => `${m} 分钟前`,
+    syncHoursAgo: (h: number) => `${h} 小时前`,
     gridCardTitle: "靓号地图",
     gridCardDesc:
       "3D / 4D 数字、3L 字母全集点阵图:金色 = 已被注册,暗色 = 还有机会。剩下的好号一眼看全。",
@@ -236,6 +239,9 @@ const en: Dict = {
     statOwners: "Unique owners",
     statBlock: "Latest block",
     statSync: "Last synced",
+    syncJustNow: "just now",
+    syncMinutesAgo: (m: number) => `${m} min ago`,
+    syncHoursAgo: (h: number) => `${h} h ago`,
     gridCardTitle: "Vanity Atlas",
     gridCardDesc:
       "Full dot-matrix of 3D / 4D digits and 3L letters: gold = taken, dark = still up for grabs. See every gap at a glance.",

@@ -4,7 +4,6 @@ import { Suspense } from "react";
 import NameCard from "@/components/NameCard";
 import { PAGE_SIZE, browseVanity } from "@/lib/browse";
 import { getStats, getVanity } from "@/lib/data";
-import { formatSyncTime } from "@/lib/format";
 import { getDict } from "@/lib/i18n";
 import { getLocale } from "@/lib/locale";
 import { BINANCE_WALLET_URL } from "@/lib/constants";
@@ -15,6 +14,15 @@ export const metadata: Metadata = {
   title: zh.siteNameFull,
   description: zh.meta.defaultDesc,
 };
+
+// 相对时间避免时区歧义(Vercel 服务器为 UTC,直接显示绝对时间常被误读为"没更新")
+function syncAgo(iso: string, t: ReturnType<typeof getDict>): string {
+  if (!iso) return t.check.unknown;
+  const diffMin = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 60000));
+  if (diffMin < 1) return t.home.syncJustNow;
+  if (diffMin < 60) return t.home.syncMinutesAgo(diffMin);
+  return t.home.syncHoursAgo(Math.floor(diffMin / 60));
+}
 
 export default function Home() {
   return (
@@ -39,7 +47,7 @@ async function HomeBody() {
     { value: stats.totalVanity, label: t.home.statVanity },
     { value: stats.totalOwners, label: t.home.statOwners },
     { value: stats.lastIndexedBlock.toLocaleString(), label: t.home.statBlock },
-    { value: formatSyncTime(stats.lastSync, t.check.unknown), label: t.home.statSync },
+    { value: syncAgo(stats.lastSync, t), label: t.home.statSync },
   ];
 
   return (
