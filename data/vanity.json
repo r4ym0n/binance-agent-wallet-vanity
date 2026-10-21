@@ -60170,6 +60170,19 @@
     "label": "精品"
   },
   {
+    "name": "ctt",
+    "owner": "0xd4da7f39f3ba7be06b7e3c917bd417640d1f9ea3",
+    "tokenId": "0xdc9d9e124d97336508c673d5f662845682d360a011f59d5e7168554f406be5dc",
+    "block": 128887323,
+    "tx": "0xa596f0bc208861eb079589be5d0f9fd572167740a7ae49c71f08fea021589b90",
+    "ts": 1792562862,
+    "score": 45,
+    "tags": [
+      "3L"
+    ],
+    "label": "精品"
+  },
+  {
     "name": "6669",
     "owner": "0x86963480e404471ef4acb4ee9fef12cb8397735d",
     "tokenId": "0x94220f941b03e022e8ba780685c3a540ec7afa9783804afa0f123b48b1cc0d6a",
@@ -116757,6 +116770,19 @@
     "block": 128886943,
     "tx": "0x4aba72078076a3b889f83319658d6100c371d4b17659b11950d4b4b6023b3c67",
     "ts": 1792562691,
+    "score": 30,
+    "tags": [
+      "4L"
+    ],
+    "label": "优质"
+  },
+  {
+    "name": "bbox",
+    "owner": "0xca2590a8a9bc0ced7c58c3f33a6b840f84ae9b60",
+    "tokenId": "0x04a75308aff9b6285c2c16e7e7e0c876fc8b28d68e7f9e9632fbae1025a1440f",
+    "block": 128887310,
+    "tx": "0xa3b1fc2c5af5029f1df2a8fd99fbef85539150a555f3a43c22b98a3e22e37e40",
+    "ts": 1792562857,
     "score": 30,
     "tags": [
       "4L"
