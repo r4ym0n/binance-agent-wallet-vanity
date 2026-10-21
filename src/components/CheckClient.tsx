@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import LabelBadge from "./LabelBadge";
 import {
@@ -13,25 +13,29 @@ import { shortenAddress } from "@/lib/format";
 import type { VanityRecord } from "@/lib/data";
 
 export default function CheckClient({
-  records,
   initialName = "",
 }: {
-  records: VanityRecord[];
   initialName?: string;
 }) {
   const [input, setInput] = useState(initialName);
   const [checked, setChecked] = useState(initialName.trim() !== "");
+  const [record, setRecord] = useState<VanityRecord | null>(null);
+  const [loading, setLoading] = useState(false);
 
   const name = input.trim().toLowerCase().replace(/\.ai$/, "");
   const valid = NAME_PATTERN.test(name);
 
-  const record = useMemo(
-    () => (valid ? records.find((r) => r.name === name) ?? null : null),
-    [records, name, valid]
-  );
-
-  function handleCheck() {
+  async function handleCheck() {
+    if (!valid || !name) return;
     setChecked(true);
+    setLoading(true);
+    try {
+      const res = await fetch(`/api/check?name=${encodeURIComponent(name)}`);
+      const data = (await res.json()) as { record: VanityRecord | null };
+      setRecord(data.record);
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -54,10 +58,10 @@ export default function CheckClient({
         </div>
         <button
           onClick={handleCheck}
-          disabled={!valid || !name}
+          disabled={!valid || !name || loading}
           className="rounded-lg bg-gold px-6 py-3 font-medium text-ink transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
         >
-          查询
+          {loading ? "查询中…" : "查询"}
         </button>
       </div>
       <p className="mt-2 text-xs text-zinc-500">
@@ -71,7 +75,7 @@ export default function CheckClient({
         </p>
       )}
 
-      {checked && valid && record && (
+      {checked && valid && !loading && record && (
         <div className="mt-6 rounded-xl border border-gold/30 bg-panel p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="font-mono text-3xl font-bold text-gold">
@@ -104,7 +108,7 @@ export default function CheckClient({
         </div>
       )}
 
-      {checked && valid && !record && (
+      {checked && valid && !loading && !record && (
         <div className="mt-6 rounded-xl border border-cyan-400/30 bg-cyan-400/5 p-6">
           <div className="font-mono text-3xl font-bold text-white">
             {name}

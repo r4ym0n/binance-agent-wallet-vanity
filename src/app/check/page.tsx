@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import CheckClient from "@/components/CheckClient";
-import { getVanity } from "@/lib/data";
 
 export const metadata: Metadata = {
   title: "靓号查询",
@@ -11,7 +10,6 @@ export const metadata: Metadata = {
 export default async function CheckPage(props: PageProps<"/check">) {
   const sp = await props.searchParams;
   const initial = typeof sp.name === "string" ? sp.name : "";
-  const vanity = await getVanity();
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-12">
@@ -21,7 +19,7 @@ export default async function CheckPage(props: PageProps<"/check">) {
           输入你想要的名字,看看有没有被人抢走。
         </p>
       </div>
-      <CheckClient records={vanity} initialName={initial} />
+      <CheckClient initialName={initial} />
       <p className="mx-auto mt-10 max-w-2xl rounded-xl border border-white/5 bg-panel p-4 text-xs leading-relaxed text-zinc-500">
         说明:本站索引只收录「靓号相关」名字(短位、纯数字、规律组合等),
         未收录不代表仍可注册。最终结果请以下方链上记录为准:
