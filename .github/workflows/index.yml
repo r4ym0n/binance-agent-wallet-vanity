@@ -1,9 +1,16 @@
 name: 索引链上靓号数据
 
+# GitHub 的 schedule 对本仓库未生效(观察 12h+ 零触发),
+# 因此采用"自愈链":每次运行提交 data/ 变更 → push 触发下一次运行,
+# 链条节奏 = 单次运行时长(索引器时间预算 14 分钟)。
 on:
   schedule:
     - cron: "*/15 * * * *"
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "data/**"
 
 concurrency:
   group: index-data
@@ -15,7 +22,7 @@ permissions:
 jobs:
   index:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 
@@ -23,19 +30,24 @@ jobs:
         with:
           node-version: 26
 
+      - name: 记录本轮运行时间戳
+        run: date +%s > data/.chain-ts
+
       - name: 运行索引器
         env:
           BSC_RPC_URLS: ${{ secrets.BSC_RPC_URLS }}
+          INDEX_MAX_CALLS: 1200
+          INDEX_TIME_BUDGET_MS: 840000
         run: node scripts/index.mjs
 
-      - name: 提交数据变更
+      - name: 提交数据变更并推送(触发链上下一轮)
         run: |
-          if git diff --quiet -- data/ 2>/dev/null && [ -z "$(git status --porcelain data/)" ]; then
-            echo "data/ 无变更,跳过提交"
-            exit 0
-          fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
-          git commit -m "chore: 更新链上靓号索引数据 [skip ci]"
-          git push
+          if [ -n "$(git status --porcelain data/)" ]; then
+            git commit -m "chore: 更新链上靓号索引数据"
+            git push
+          else
+            echo "data/ 无变更,链条本轮暂停"
+          fi
