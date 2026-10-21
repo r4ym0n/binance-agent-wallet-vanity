@@ -1,18 +1,32 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import NameCard from "@/components/NameCard";
 import { PAGE_SIZE, browseVanity } from "@/lib/browse";
 import { getStats, getVanity } from "@/lib/data";
 import { formatSyncTime } from "@/lib/format";
+import { getDict } from "@/lib/i18n";
+import { getLocale } from "@/lib/locale";
 import { BINANCE_WALLET_URL } from "@/lib/constants";
 
+const zh = getDict("zh");
+
 export const metadata: Metadata = {
-  title: ".ai 靓号雷达",
-  description:
-    "发现币安钱包 × SPACE ID Agent ID(.ai 域名)已注册的靓号:短号、豹子号、顺子号、520/1314 寓意号,点阵地图一眼发现还没被注册的靓号。",
+  title: zh.siteNameFull,
+  description: zh.meta.defaultDesc,
 };
 
-export default async function Home() {
+export default function Home() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-20 text-center text-sm text-zinc-500">Loading…</div>}>
+      <HomeBody />
+    </Suspense>
+  );
+}
+
+async function HomeBody() {
+  const locale = await getLocale();
+  const t = getDict(locale);
   const [stats, vanity] = await Promise.all([getStats(), getVanity()]);
   const top = browseVanity(vanity, {
     filter: "all",
@@ -22,25 +36,23 @@ export default async function Home() {
   }).items;
 
   const statItems = [
-    { value: stats.totalVanity, label: "已索引靓号" },
-    { value: stats.totalOwners, label: "独立持有者" },
-    { value: stats.lastIndexedBlock.toLocaleString(), label: "最新同步区块" },
-    { value: formatSyncTime(stats.lastSync), label: "同步时间" },
+    { value: stats.totalVanity, label: t.home.statVanity },
+    { value: stats.totalOwners, label: t.home.statOwners },
+    { value: stats.lastIndexedBlock.toLocaleString(), label: t.home.statBlock },
+    { value: formatSyncTime(stats.lastSync, t.check.unknown), label: t.home.statSync },
   ];
 
   return (
     <div className="mx-auto max-w-6xl px-4">
       <section className="py-14 text-center sm:py-20">
         <p className="mb-3 font-mono text-sm tracking-widest text-gold">
-          BNB Chain · SPACE ID Agent ID
+          {t.siteTagline}
         </p>
         <h1 className="text-4xl font-bold tracking-tight text-white sm:text-6xl">
-          .ai 靓号雷达
+          {t.siteNameFull}
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400">
-          币安钱包 × SPACE ID 推出的 .ai 域名正在免费 claim。
-          这里持续索引链上注册事件,帮你发现已被抢走的靓号、
-          用点阵地图一眼找出还没被注册的好号。
+          {t.home.heroDesc}
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <a
@@ -49,13 +61,13 @@ export default async function Home() {
             rel="noreferrer"
             className="rounded-lg bg-gold px-6 py-3 font-medium text-ink transition-colors hover:bg-gold/90"
           >
-            去币安钱包领取
+            {t.home.claimCta}
           </a>
           <Link
             href="/check"
             className="rounded-lg border border-white/15 px-6 py-3 text-zinc-200 transition-colors hover:bg-white/5"
           >
-            查询靓号是否被抢
+            {t.home.checkCta}
           </Link>
         </div>
       </section>
@@ -81,15 +93,14 @@ export default async function Home() {
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-white group-hover:text-gold">
-              靓号地图
+              {t.home.gridCardTitle}
             </h2>
             <span className="text-gold transition-transform group-hover:translate-x-1">
               →
             </span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-            3D / 4D 数字、3L 字母全集点阵图:金色 = 已被注册,暗色 =
-            还有机会。剩下的好号一眼看全。
+            {t.home.gridCardDesc}
           </p>
         </Link>
         <Link
@@ -98,32 +109,33 @@ export default async function Home() {
         >
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-bold text-white group-hover:text-gold">
-              全部靓号
+              {t.home.browseCardTitle}
             </h2>
             <span className="text-zinc-500 transition-transform group-hover:translate-x-1 group-hover:text-gold">
               →
             </span>
           </div>
           <p className="mt-2 text-sm leading-relaxed text-zinc-400">
-            按豹子号、顺子号、520/1314 等规律筛选,支持前缀搜索,
-            共 {stats.totalVanity.toLocaleString()} 条已索引记录。
+            {t.home.browseCardDesc}
           </p>
         </Link>
       </section>
 
       <section className="pb-8">
         <div className="mb-6 flex items-end justify-between">
-          <h2 className="text-2xl font-bold text-white">评分 Top {PAGE_SIZE}</h2>
+          <h2 className="text-2xl font-bold text-white">
+            {t.home.topTitle} {PAGE_SIZE}
+          </h2>
           <Link
             href="/browse"
             className="text-sm text-zinc-400 transition-colors hover:text-gold"
           >
-            浏览全部 →
+            {t.home.browseAll}
           </Link>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {top.map((r) => (
-            <NameCard key={r.name} record={r} />
+            <NameCard key={r.name} record={r} t={t} />
           ))}
         </div>
         <p className="mt-6 text-center">
@@ -131,7 +143,7 @@ export default async function Home() {
             href="/browse"
             className="text-sm text-zinc-400 transition-colors hover:text-gold"
           >
-            查看全部 {stats.totalVanity.toLocaleString()} 个靓号 →
+            {t.home.viewAll(stats.totalVanity.toLocaleString(locale === "zh" ? "zh-CN" : "en-US"))}
           </Link>
         </p>
       </section>

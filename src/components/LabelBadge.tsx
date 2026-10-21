@@ -1,3 +1,5 @@
+import type { Dict } from "@/lib/i18n";
+
 const STYLES: Record<string, string> = {
   极品: "bg-gold/15 text-gold border-gold/50",
   罕见: "bg-purple-500/15 text-purple-300 border-purple-400/50",
@@ -8,9 +10,11 @@ const STYLES: Record<string, string> = {
 
 export default function LabelBadge({
   label,
+  t,
   size = "md",
 }: {
   label: string;
+  t: Dict;
   size?: "md" | "lg";
 }) {
   const cls = STYLES[label] ?? STYLES["普通"];
@@ -20,7 +24,7 @@ export default function LabelBadge({
     <span
       className={`inline-flex items-center rounded-full border font-medium ${sizeCls} ${cls}`}
     >
-      {label}
+      {t.labels[label] ?? label}
     </span>
   );
 }

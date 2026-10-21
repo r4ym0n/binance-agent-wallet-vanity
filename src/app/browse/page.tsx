@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Suspense } from "react";
 import NameCard from "@/components/NameCard";
 import {
   BROWSE_FILTERS,
@@ -8,10 +9,14 @@ import {
   parseBrowseQuery,
 } from "@/lib/browse";
 import { getVanity } from "@/lib/data";
+import { getDict } from "@/lib/i18n";
+import { getLocale } from "@/lib/locale";
+
+const zh = getDict("zh");
 
 export const metadata: Metadata = {
-  title: "全部靓号",
-  description: "浏览币安钱包 .ai 域名全部已索引靓号,支持按规律筛选、前缀搜索与分页。",
+  title: zh.browse.title,
+  description: zh.browse.desc,
 };
 
 function buildHref(query: Record<string, string | undefined>) {
@@ -23,8 +28,21 @@ function buildHref(query: Record<string, string | undefined>) {
   return s ? `/browse?${s}` : "/browse";
 }
 
-export default async function BrowsePage(props: PageProps<"/browse">) {
-  const sp = await props.searchParams;
+export default function BrowsePage(props: PageProps<"/browse">) {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-20 text-center text-sm text-zinc-500">Loading…</div>}>
+      <BrowseBody {...props} />
+    </Suspense>
+  );
+}
+
+async function BrowseBody(props: PageProps<"/browse">) {
+  const [locale, sp, vanity] = await Promise.all([
+    getLocale(),
+    props.searchParams,
+    getVanity(),
+  ]);
+  const t = getDict(locale);
   const one = (v: string | string[] | undefined) =>
     typeof v === "string" ? v : undefined;
   const query = parseBrowseQuery({
@@ -33,9 +51,7 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
     sort: one(sp.sort),
     page: one(sp.page),
   });
-  const vanity = await getVanity();
   const { items, total, page, pageCount } = browseVanity(vanity, query);
-
   const base = { filter: query.filter, q: query.q, sort: query.sort };
 
   const pages: number[] = [];
@@ -47,16 +63,16 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
     <div className="mx-auto max-w-6xl px-4 py-10">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-white">全部靓号</h1>
+          <h1 className="text-2xl font-bold text-white">{t.browse.title}</h1>
           <p className="mt-1 text-sm text-zinc-500">
-            共 {total.toLocaleString()} 个匹配,每页 {PAGE_SIZE} 个
+            {t.browse.resultCount(total.toLocaleString(), PAGE_SIZE)}
           </p>
         </div>
         <Link
           href="/grid"
           className="text-sm text-zinc-400 transition-colors hover:text-gold"
         >
-          想一眼发现还没被注册的号?去靓号地图 →
+          {t.browse.toGrid}
         </Link>
       </div>
 
@@ -71,7 +87,11 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
                 : "border-white/10 text-zinc-400 hover:border-white/25 hover:text-zinc-200"
             }`}
           >
-            {f.label}
+            {f.key === "all"
+              ? t.browse.filterAll
+              : f.key === "极品"
+                ? t.browse.filterLegendary
+                : f.key}
           </Link>
         ))}
       </div>
@@ -87,21 +107,21 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
           <input
             name="q"
             defaultValue={query.q}
-            placeholder="按名字前缀搜索,如 88"
+            placeholder={t.browse.searchPlaceholder}
             className="w-56 rounded-lg border border-white/10 bg-white/5 px-3 py-2 font-mono text-sm text-white placeholder:text-zinc-600 focus:border-gold/50 focus:outline-none"
           />
           <button
             type="submit"
             className="rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-200 transition-colors hover:bg-white/5"
           >
-            搜索
+            {t.browse.search}
           </button>
         </form>
         <div className="flex overflow-hidden rounded-lg border border-white/10 text-sm">
           {(
             [
-              { key: "score", label: "按评分" },
-              { key: "length", label: "按长度" },
+              { key: "score", label: t.browse.sortScore },
+              { key: "length", label: t.browse.sortLength },
             ] as const
           ).map((s) => (
             <Link
@@ -121,12 +141,12 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
 
       {items.length === 0 ? (
         <p className="rounded-xl border border-dashed border-white/10 p-10 text-center text-sm text-zinc-500">
-          没有匹配的靓号,换个筛选条件试试。
+          {t.browse.empty}
         </p>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {items.map((r) => (
-            <NameCard key={r.name} record={r} />
+            <NameCard key={r.name} record={r} t={t} />
           ))}
         </div>
       )}
@@ -138,7 +158,7 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
               href={buildHref({ ...base, page: String(page - 1) })}
               className="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-gold/40 hover:text-gold"
             >
-              ← 上一页
+              {t.browse.prev}
             </Link>
           )}
           {pages[0] > 1 && (
@@ -183,7 +203,7 @@ export default async function BrowsePage(props: PageProps<"/browse">) {
               href={buildHref({ ...base, page: String(page + 1) })}
               className="rounded-lg border border-white/10 px-3 py-2 text-sm text-zinc-300 transition-colors hover:border-gold/40 hover:text-gold"
             >
-              下一页 →
+              {t.browse.next}
             </Link>
           )}
         </nav>

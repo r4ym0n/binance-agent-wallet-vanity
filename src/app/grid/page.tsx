@@ -1,11 +1,16 @@
 import type { Metadata } from "next";
-import GridMatrix from "@/components/GridMatrix";
+import { Suspense } from "react";
+import GridMatrix, { type GridDetail } from "@/components/GridMatrix";
 import { getVanity } from "@/lib/data";
+import { formatTime } from "@/lib/format";
+import { getDict } from "@/lib/i18n";
+import { getLocale } from "@/lib/locale";
+
+const zh = getDict("zh");
 
 export const metadata: Metadata = {
-  title: "靓号地图",
-  description:
-    "3D / 4D 数字与 3L 字母 .ai 域名全集点阵图:金色已注册、暗色未注册,一眼发现还没被抢走的靓号。",
+  title: zh.grid.title,
+  description: zh.grid.desc,
 };
 
 function base26Name(i: number): string {
@@ -18,58 +23,61 @@ function base26Name(i: number): string {
   return s;
 }
 
-export default async function GridPage() {
-  const vanity = await getVanity();
-  const registered = new Set(vanity.map((r) => r.name));
+export default function GridPage() {
+  return (
+    <Suspense fallback={<div className="mx-auto max-w-6xl px-4 py-20 text-center text-sm text-zinc-500">Loading…</div>}>
+      <GridBody />
+    </Suspense>
+  );
+}
 
-  const inNamespace = (size: number, gen: (i: number) => string) => {
-    const list: string[] = [];
-    for (let i = 0; i < size; i++) {
-      const name = gen(i);
-      if (registered.has(name)) list.push(name);
-    }
-    return list;
-  };
+async function GridBody() {
+  const [locale, vanity] = await Promise.all([getLocale(), getVanity()]);
+  const t = getDict(locale);
+
+  const gen =
+    locale === "zh"
+      ? [
+          { key: "3D", label: "3D 数字", desc: "000–999(1,000)" },
+          { key: "4D", label: "4D 数字", desc: "0000–9999(10,000)" },
+          { key: "3L", label: "3L 字母", desc: "aaa–zzz(17,576)" },
+        ]
+      : [
+          { key: "3D", label: t.grid.cat3D, desc: "000–999 (1,000)" },
+          { key: "4D", label: t.grid.cat4D, desc: "0000–9999 (10,000)" },
+          { key: "3L", label: t.grid.cat3L, desc: "aaa–zzz (17,576)" },
+        ];
 
   const categories = [
-    {
-      key: "3D",
-      label: "3D 数字",
-      desc: "000–999",
-      size: 1000,
-      registered: inNamespace(1000, (i) => String(i).padStart(3, "0")),
-      cell: 16,
-      gap: 3,
-    },
-    {
-      key: "4D",
-      label: "4D 数字",
-      desc: "0000–9999",
-      size: 10000,
-      registered: inNamespace(10000, (i) => String(i).padStart(4, "0")),
-      cell: 8,
-      gap: 2,
-    },
-    {
-      key: "3L",
-      label: "3L 字母",
-      desc: "aaa–zzz",
-      size: 17576,
-      registered: inNamespace(17576, base26Name),
-      cell: 7,
-      gap: 2,
-    },
+    { ...gen[0], size: 1000, cell: 16, gap: 3 },
+    { ...gen[1], size: 10000, cell: 8, gap: 2 },
+    { ...gen[2], size: 17576, cell: 7, gap: 2 },
   ];
+
+  // 只对三个全集内的名字构建 hover 详情,避免序列化全量索引
+  const details: Record<string, GridDetail> = {};
+  const inSpace = (name: string) =>
+    /^[0-9]{3}$/.test(name) ||
+    /^[0-9]{4}$/.test(name) ||
+    /^[a-z]{3}$/.test(name);
+  for (const r of vanity) {
+    if (!inSpace(r.name)) continue;
+    details[r.name] = {
+      label: t.labels[r.label] ?? r.label,
+      score: r.score,
+      owner: r.owner,
+      time: formatTime(r.ts, t.check.unknown),
+    };
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
-      <h1 className="text-2xl font-bold text-white">靓号地图</h1>
+      <h1 className="text-2xl font-bold text-white">{t.grid.title}</h1>
       <p className="mt-2 max-w-2xl text-sm leading-relaxed text-zinc-400">
-        规则名字的「全集扫雷图」:每个格子是一个候选名字。金色 = 已被注册,暗色 =
-        还有机会,开启「高亮未注册」可以只突出空缺。点格子直接跳转详情或领取页。
+        {t.grid.intro}
       </p>
       <div className="mt-6">
-        <GridMatrix categories={categories} />
+        <GridMatrix categories={categories} details={details} locale={locale} />
       </div>
     </div>
   );

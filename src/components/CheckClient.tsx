@@ -11,12 +11,16 @@ import {
 } from "@/lib/constants";
 import { shortenAddress } from "@/lib/format";
 import type { VanityRecord } from "@/lib/data";
+import { getDict, type Locale } from "@/lib/i18n";
 
 export default function CheckClient({
+  locale,
   initialName = "",
 }: {
+  locale: Locale;
   initialName?: string;
 }) {
+  const t = getDict(locale);
   const [input, setInput] = useState(initialName);
   const [checked, setChecked] = useState(initialName.trim() !== "");
   const [record, setRecord] = useState<VanityRecord | null>(null);
@@ -49,7 +53,7 @@ export default function CheckClient({
               setChecked(false);
             }}
             onKeyDown={(e) => e.key === "Enter" && handleCheck()}
-            placeholder={`输入靓号名字,如 888(无需输入 ${TLD})`}
+            placeholder={t.check.placeholder}
             className="w-full rounded-lg border border-white/10 bg-white/5 px-4 py-3 font-mono text-lg text-white placeholder:text-sm placeholder:text-zinc-600 focus:border-gold/50 focus:outline-none"
           />
           <span className="pointer-events-none absolute inset-y-0 right-4 flex items-center font-mono text-lg text-zinc-500">
@@ -61,17 +65,14 @@ export default function CheckClient({
           disabled={!valid || !name || loading}
           className="rounded-lg bg-gold px-6 py-3 font-medium text-ink transition-colors hover:bg-gold/90 disabled:cursor-not-allowed disabled:bg-zinc-700 disabled:text-zinc-400"
         >
-          {loading ? "查询中…" : "查询"}
+          {loading ? t.check.loading : t.check.submit}
         </button>
       </div>
-      <p className="mt-2 text-xs text-zinc-500">
-        仅支持小写字母、数字与连字符,1-32 位。
-      </p>
+      <p className="mt-2 text-xs text-zinc-500">{t.check.inputHint}</p>
 
       {!valid && input.trim() !== "" && (
         <p className="mt-4 rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-sm text-red-300">
-          输入格式不正确:{TLD}
-          域名只包含小写字母 a-z、数字 0-9 与连字符 -,长度 1-32 位。
+          {t.check.invalid}
         </p>
       )}
 
@@ -82,10 +83,10 @@ export default function CheckClient({
               {record.name}
               <span className="text-lg font-normal text-zinc-500">{TLD}</span>
             </span>
-            <LabelBadge label={record.label} />
+            <LabelBadge label={record.label} t={t} />
           </div>
           <p className="mt-3 text-sm text-zinc-300">
-            已被注册
+            {t.check.registered}
             {record.ts
               ? ` · ${new Date(record.ts * 1000).toLocaleString("zh-CN", {
                   timeZone: "UTC",
@@ -93,17 +94,19 @@ export default function CheckClient({
               : ""}
           </p>
           <p className="mt-1 text-sm text-zinc-400">
-            持有者:
+            {t.check.holder}
             <span className="ml-1 font-mono text-xs">
               {shortenAddress(record.owner, 8, 6)}
             </span>
-            <span className="ml-2 text-gold/80">评分 {record.score}</span>
+            <span className="ml-2 text-gold/80">
+              {t.check.scoreSuffix} {record.score}
+            </span>
           </p>
           <Link
             href={`/name/${record.name}`}
             className="mt-4 inline-block rounded-lg border border-gold/40 px-4 py-2 text-sm text-gold transition-colors hover:bg-gold/10"
           >
-            查看完整详情 →
+            {t.check.viewDetail}
           </Link>
         </div>
       )}
@@ -115,8 +118,7 @@ export default function CheckClient({
             <span className="text-lg font-normal text-zinc-500">{TLD}</span>
           </div>
           <p className="mt-3 text-sm leading-relaxed text-zinc-300">
-            暂未收录,有可能还可以抢注!本站索引只收录靓号相关名字,
-            普通名字未收录不代表仍可注册,请以下方链上查询为准。
+            {t.check.notIndexed}
           </p>
           <div className="mt-4 flex flex-wrap gap-3">
             <a
@@ -125,7 +127,7 @@ export default function CheckClient({
               rel="noreferrer"
               className="rounded-lg border border-white/15 px-4 py-2 text-sm text-zinc-200 transition-colors hover:bg-white/5"
             >
-              去 Bscscan 验证链上记录
+              {t.check.verifyChain}
             </a>
             <a
               href={BINANCE_WALLET_URL}
@@ -133,7 +135,7 @@ export default function CheckClient({
               rel="noreferrer"
               className="rounded-lg bg-gold px-4 py-2 text-sm font-medium text-ink transition-colors hover:bg-gold/90"
             >
-              去币安钱包领取
+              {t.check.claim}
             </a>
           </div>
         </div>
