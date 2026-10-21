@@ -20,6 +20,9 @@ const zh = getDict("zh");
 // 部署存储轻松冲破 Hobby 10GB 的 Deployment Storage 上限,且每次构建要 4 分钟。
 // 不设 generateStaticParams 即为按需渲染;缓存由 getVanityByName 的
 // cacheLife(300s) 负责。
+// 已知限制:cacheComponents 流式渲染下 notFound() 只会流式替换内容为 404 页,
+// HTTP 状态仍是 200(soft 404,实测 instant=false 也无效);Next 会注入
+// robots noindex,搜索引擎不索引,对本站(仅已收录名字才有入口)无实际影响。
 
 export async function generateMetadata(
   props: PageProps<"/name/[name]">
