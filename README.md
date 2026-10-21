@@ -12,7 +12,7 @@
 | 注册合约(NFT 本体) | `0x60b9262456de011f7d15a54cdd8c48baaa8b022f`(SPACE ID Agent ID,symbol: AI) |
 | 注册事件 | `NameRegistered`,topic0 `0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5` |
 | topics[1] / topics[2] | tokenId(bytes32)/ owner 地址;data 为 ABI 编码的明文域名 |
-| 注册起始区块 | `128733522`(2026-10-20 上线,NodeReal 链上二分精确定位) |
+| 注册起始区块 | `128506365`(2026-10-21 复核;合约部署于 127950748。早期曾误判为 128733522,导致漏扫 1,454 条前置注册) |
 | 领取入口 | [币安 Web3 钱包](https://www.binance.com/zh-CN/web3wallet) |
 
 ## 技术栈

@@ -30,8 +30,11 @@ const STATS_FILE = path.join(DATA_DIR, "stats.json");
 const CONTRACT = "0x60b9262456de011f7d15a54cdd8c48baaa8b022f";
 const NAME_REGISTERED_TOPIC =
   "0x663d34a86c6277aafbd5c6912c96cc5df091e6702ea3ea91b8f378adcbd8a5e5";
-// 首个注册区块 128733522(NodeReal 精确二分定位;128737618 为已验证的 403.ai claim 交易块)
-const START_BLOCK = 128733500;
+// 首个注册区块 128506365(2026-10-21 复核:此前二分结论 128733522 有误,
+// 该块只是公开 claim 活动前后的流量起点;999 等在 128506365–128733521
+// 的前置注册期被抢注,漏扫 1,454 条。合约部署于 127950748。)
+// 128737618 为已验证的 403.ai claim 交易块。
+const START_BLOCK = 128506300;
 
 // BSC_RPC_URLS 环境变量里的节点(带 key 的付费/免费层)排在最前优先使用
 const RPCS = [
