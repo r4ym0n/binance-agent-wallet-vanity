@@ -589,7 +589,19 @@ const stats = {
   totalVanity: merged.length,
   totalOwners: owners.size,
 };
-await saveJson(STATS_FILE, stats);
+// 无实质数据变化时不写 stats.json(lastSync 不变),避免 Actions 链条空转
+let prevStats = null;
+try {
+  prevStats = JSON.parse(await readFile(STATS_FILE, "utf8"));
+} catch {
+  // 首次运行,无历史文件
+}
+const statsChanged =
+  !prevStats ||
+  prevStats.lastIndexedBlock !== stats.lastIndexedBlock ||
+  prevStats.totalVanity !== stats.totalVanity ||
+  prevStats.totalOwners !== stats.totalOwners;
+if (statsChanged) await saveJson(STATS_FILE, stats);
 
 if (!recentOnly) {
   await saveJson(STATE_FILE, { lastIndexedBlock, scannedUntil, holes });

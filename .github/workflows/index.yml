@@ -1,8 +1,9 @@
 name: 索引链上靓号数据
 
-# GitHub 的 schedule 对本仓库未生效(观察 12h+ 零触发),
-# 因此采用"自愈链":每次运行提交 data/ 变更 → push 触发下一次运行,
-# 链条节奏 = 单次运行时长(索引器时间预算 14 分钟)。
+# 自愈链:索引器只在有实质数据变化时才提交(见 scripts/index.mjs 的
+# stats.json 条件写入),提交 → push 触发下一轮,直到追平链头后链条自然
+# 停歇;schedule 每 15 分钟兜底唤醒一次。勿恢复无条件写 data/.chain-ts
+# 的方案 —— 会在追平后无限空转、刷爆提交与 Vercel 构建队列。
 on:
   schedule:
     - cron: "*/15 * * * *"
@@ -34,9 +35,6 @@ jobs:
         with:
           node-version: 26
 
-      - name: 记录本轮运行时间戳
-        run: date +%s > data/.chain-ts
-
       - name: 运行索引器
         env:
           BSC_RPC_URLS: ${{ secrets.BSC_RPC_URLS }}
@@ -44,14 +42,17 @@ jobs:
           INDEX_TIME_BUDGET_MS: 840000
         run: node scripts/index.mjs
 
-      - name: 提交数据变更并推送(触发链上下一轮)
+      # push 前先 rebase:push 触发与 schedule 触发的运行可能基于同一旧提交,
+      # 链上已有新提交时直接 push 会被拒(曾因竞态断链)。
+      - name: 提交数据变更并推送(有实质变化才触发链上下一轮)
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add data/
           if [ -n "$(git status --porcelain data/)" ]; then
             git commit -m "chore: 更新链上靓号索引数据"
+            git pull --rebase origin main
             git push
           else
-            echo "data/ 无变更,链条本轮暂停"
+            echo "data/ 无实质变更,链条本轮停歇"
           fi
