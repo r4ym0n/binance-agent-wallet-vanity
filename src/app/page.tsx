@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import VanityExplorer from "@/components/VanityExplorer";
+import NameCard from "@/components/NameCard";
+import { PAGE_SIZE, browseVanity } from "@/lib/browse";
 import { getStats, getVanity } from "@/lib/data";
 import { formatSyncTime } from "@/lib/format";
 import { BINANCE_WALLET_URL } from "@/lib/constants";
@@ -8,11 +9,17 @@ import { BINANCE_WALLET_URL } from "@/lib/constants";
 export const metadata: Metadata = {
   title: ".ai 靓号雷达",
   description:
-    "发现币安钱包 × SPACE ID Agent ID(.ai 域名)已注册的靓号:短号、豹子号、顺子号、520/1314 寓意号,支持筛选与查询。",
+    "发现币安钱包 × SPACE ID Agent ID(.ai 域名)已注册的靓号:短号、豹子号、顺子号、520/1314 寓意号,点阵地图一眼发现还没被注册的靓号。",
 };
 
 export default async function Home() {
   const [stats, vanity] = await Promise.all([getStats(), getVanity()]);
+  const top = browseVanity(vanity, {
+    filter: "all",
+    q: "",
+    sort: "score",
+    page: 1,
+  }).items;
 
   const statItems = [
     { value: stats.totalVanity, label: "已索引靓号" },
@@ -32,7 +39,8 @@ export default async function Home() {
         </h1>
         <p className="mx-auto mt-5 max-w-xl text-base leading-relaxed text-zinc-400">
           币安钱包 × SPACE ID 推出的 .ai 域名正在免费 claim。
-          这里持续索引链上注册事件,帮你发现已被抢走的靓号、查询心仪名字是否还在。
+          这里持续索引链上注册事件,帮你发现已被抢走的靓号、
+          用点阵地图一眼找出还没被注册的好号。
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
           <a
@@ -66,17 +74,66 @@ export default async function Home() {
         ))}
       </section>
 
+      <section className="mb-12 grid gap-4 sm:grid-cols-2">
+        <Link
+          href="/grid"
+          className="group rounded-2xl border border-gold/25 bg-gradient-to-br from-gold/10 to-transparent p-6 transition-colors hover:border-gold/50"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white group-hover:text-gold">
+              靓号地图
+            </h2>
+            <span className="text-gold transition-transform group-hover:translate-x-1">
+              →
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            3D / 4D 数字、3L 字母全集点阵图:金色 = 已被注册,暗色 =
+            还有机会。剩下的好号一眼看全。
+          </p>
+        </Link>
+        <Link
+          href="/browse"
+          className="group rounded-2xl border border-white/10 bg-panel p-6 transition-colors hover:border-gold/40"
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-xl font-bold text-white group-hover:text-gold">
+              全部靓号
+            </h2>
+            <span className="text-zinc-500 transition-transform group-hover:translate-x-1 group-hover:text-gold">
+              →
+            </span>
+          </div>
+          <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+            按豹子号、顺子号、520/1314 等规律筛选,支持前缀搜索,
+            共 {stats.totalVanity.toLocaleString()} 条已索引记录。
+          </p>
+        </Link>
+      </section>
+
       <section className="pb-8">
         <div className="mb-6 flex items-end justify-between">
-          <h2 className="text-2xl font-bold text-white">靓号榜单</h2>
+          <h2 className="text-2xl font-bold text-white">评分 Top {PAGE_SIZE}</h2>
           <Link
-            href="/patterns"
+            href="/browse"
             className="text-sm text-zinc-400 transition-colors hover:text-gold"
           >
-            靓号是怎么打分的?→
+            浏览全部 →
           </Link>
         </div>
-        <VanityExplorer records={vanity} />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {top.map((r) => (
+            <NameCard key={r.name} record={r} />
+          ))}
+        </div>
+        <p className="mt-6 text-center">
+          <Link
+            href="/browse"
+            className="text-sm text-zinc-400 transition-colors hover:text-gold"
+          >
+            查看全部 {stats.totalVanity.toLocaleString()} 个靓号 →
+          </Link>
+        </p>
       </section>
     </div>
   );

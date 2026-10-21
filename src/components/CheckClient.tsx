@@ -14,11 +14,13 @@ import type { VanityRecord } from "@/lib/data";
 
 export default function CheckClient({
   records,
+  initialName = "",
 }: {
   records: VanityRecord[];
+  initialName?: string;
 }) {
-  const [input, setInput] = useState("");
-  const [checked, setChecked] = useState(false);
+  const [input, setInput] = useState(initialName);
+  const [checked, setChecked] = useState(initialName.trim() !== "");
 
   const name = input.trim().toLowerCase().replace(/\.ai$/, "");
   const valid = NAME_PATTERN.test(name);

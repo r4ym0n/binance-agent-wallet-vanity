@@ -3,6 +3,8 @@ import { GITHUB_URL } from "@/lib/constants";
 
 const LINKS = [
   { href: "/", label: "首页" },
+  { href: "/grid", label: "靓号地图" },
+  { href: "/browse", label: "全部靓号" },
   { href: "/check", label: "靓号查询" },
   { href: "/patterns", label: "靓号规律" },
 ];

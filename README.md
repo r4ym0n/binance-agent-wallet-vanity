@@ -2,7 +2,7 @@
 
 发现与查询 BNB Chain 上 SPACE ID **Agent ID(.ai 域名)**的已注册靓号。
 币安钱包(Binance Web3 Wallet)内免费 claim,本站持续索引链上注册事件,
-展示靓号榜单、提供占用查询、科普靓号规律。
+用点阵地图展示规则名字全集的注册情况、提供榜单浏览与占用查询。
 
 ## 链上事实
 
@@ -49,6 +49,19 @@ node scripts/index.mjs --blocks 2000
 
 GitHub Actions(`.github/workflows/index.yml`)每 15 分钟运行一次索引器,
 有数据变更自动 commit + push(concurrency group 防并发)。
+
+## 页面
+
+| 路由 | 说明 |
+| --- | --- |
+| `/` | 首页:统计 + 评分 Top 48 榜单(全量记录不再内联) |
+| `/grid` | 靓号地图:3D / 4D 数字与 3L 字母全集点阵图,一眼发现未注册靓号 |
+| `/browse` | 全部靓号:按规律筛选、前缀搜索、分页(每页 48 条) |
+| `/check` | 单个名字占用查询,支持 `?name=` 预填 |
+| `/name/[name]` | 靓号详情(ISR,全部已收录名字预渲染) |
+| `/patterns` | 靓号规律与打分规则说明 |
+
+合约最短支持 3 位名字,因此地图从 3D / 3L 起。
 
 ## 开发
 

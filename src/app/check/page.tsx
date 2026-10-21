@@ -8,7 +8,9 @@ export const metadata: Metadata = {
     "查询心仪的 .ai 域名靓号是否已被注册:输入名字,即刻匹配链上索引结果。",
 };
 
-export default async function CheckPage() {
+export default async function CheckPage(props: PageProps<"/check">) {
+  const sp = await props.searchParams;
+  const initial = typeof sp.name === "string" ? sp.name : "";
   const vanity = await getVanity();
 
   return (
@@ -19,7 +21,7 @@ export default async function CheckPage() {
           输入你想要的名字,看看有没有被人抢走。
         </p>
       </div>
-      <CheckClient records={vanity} />
+      <CheckClient records={vanity} initialName={initial} />
       <p className="mx-auto mt-10 max-w-2xl rounded-xl border border-white/5 bg-panel p-4 text-xs leading-relaxed text-zinc-500">
         说明:本站索引只收录「靓号相关」名字(短位、纯数字、规律组合等),
         未收录不代表仍可注册。最终结果请以下方链上记录为准:
