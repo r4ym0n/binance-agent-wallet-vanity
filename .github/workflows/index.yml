@@ -58,8 +58,21 @@ jobs:
           HEARTBEAT_DUE=$(( $(date +%s) - ${LAST_DATA_COMMIT:-0} > 7200 ))
           if { [ "$VANITY_CHANGED" = "yes" ] || [ "$HEARTBEAT_DUE" = "1" ]; } && [ -n "$(git status --porcelain data/)" ]; then
             git commit -m "chore: 更新链上靓号索引数据"
-            git pull --rebase origin main
-            git push
+            # push 竞态重试:并发的链上运行可能已推新提交,直接 rebase 偶发冲突。
+            # 重试仍失败则放弃本轮(下一轮从远端 state.json 继续,数据不丢),
+            # 不再让整轮运行变红。
+            PUSHED=no
+            for attempt in 1 2 3; do
+              if git pull --rebase origin main && git push; then
+                PUSHED=yes
+                break
+              fi
+              git rebase --abort 2>/dev/null || true
+              sleep $((attempt * 5))
+            done
+            if [ "$PUSHED" = "no" ]; then
+              echo "::warning::本轮 push 重试后仍失败,放弃(下一轮自动补)"
+            fi
           else
             echo "无新收录且距上次数据提交不足 2h,跳过提交(链条本轮停歇)"
           fi
