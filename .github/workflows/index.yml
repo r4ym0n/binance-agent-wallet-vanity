@@ -25,6 +25,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          # 必须用 PAT 而非默认 GITHUB_TOKEN:GITHUB_TOKEN 产生的 push 事件
+          # 不会触发 workflow(防递归保护),自愈链会断;PAT 推送才会触发下一轮
+          token: ${{ secrets.GH_PAT }}
 
       - uses: actions/setup-node@v4
         with:
