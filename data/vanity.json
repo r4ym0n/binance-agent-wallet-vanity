@@ -97894,6 +97894,19 @@
     "label": "精品"
   },
   {
+    "name": "6593",
+    "owner": "0x14a17b5876c582aef8f6c0ccd483ee9159589016",
+    "tokenId": "0xfac40867d4722049eda00f01d02550832239afbe0375f0fe3f7b8002e09b7375",
+    "block": 129173119,
+    "tx": "0x400952600049c512aeb758487c7af6171f5fe94f2bbf499f7e812d08310c2158",
+    "ts": 1792691530,
+    "score": 40,
+    "tags": [
+      "4D"
+    ],
+    "label": "精品"
+  },
+  {
     "name": "bbbbbb",
     "owner": "0x4f7a12cc6c9019490d56e9bbfc31ef82586cb6dc",
     "tokenId": "0xe404397b23f0f166177ba9e8b2f56119e01bd6bbf54d8e79ac5c1164315cdb16",
@@ -192092,6 +192105,19 @@
     "block": 129172929,
     "tx": "0x83192f098a90116b5ec0d78bd2b626a331f43a2bda2417772f5b89d69df4c2b2",
     "ts": 1792691445,
+    "score": 18,
+    "tags": [
+      "4N"
+    ],
+    "label": "普通"
+  },
+  {
+    "name": "jyt1",
+    "owner": "0x7c978fd470bd28c190d1dbb45a532b7d4e6bb237",
+    "tokenId": "0x64805d8b923c894d60baaa69ce3ecf535385cbece434a3ad7771b1deb63c1f60",
+    "block": 129173124,
+    "tx": "0xf177901963c88becaad96567643f8268808ce84974359dd085de7723000e0b85",
+    "ts": 1792691532,
     "score": 18,
     "tags": [
       "4N"
