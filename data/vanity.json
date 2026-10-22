@@ -111871,6 +111871,20 @@
     "label": "优质"
   },
   {
+    "name": "520529",
+    "owner": "0x91a01b625514b2def57b4f9f0d34eef23411367e",
+    "tokenId": "0x56c8a8c99f766d05096d080633dff75d3a032b13825e6788d0d089195ce24fe0",
+    "block": 129171286,
+    "tx": "0x981b4c7b7c02bef4291b95ce2715ae3d211b35415b7a94ca773f454f1c8a9d81",
+    "ts": 1792690705,
+    "score": 32,
+    "tags": [
+      "6D",
+      "520"
+    ],
+    "label": "优质"
+  },
+  {
     "name": "888888888888888",
     "owner": "0x6a161f4257afffe16ec524dde5eca3f60d4fb275",
     "tokenId": "0xeecb100b615d0e1a8acb16337463ef339e82beb685cccd778384ca96cf2ee26f",
@@ -263183,6 +263197,17 @@
     "block": 129171240,
     "tx": "0xac3c251565b7719cbcb653dc2509512d7f6b00639ceda4a9a48d5f8ef3551958",
     "ts": 1792690684,
+    "score": 0,
+    "tags": [],
+    "label": "普通"
+  },
+  {
+    "name": "izzy7",
+    "owner": "0x5f247e104b77d8c9665b3c797304e00cdedfbaf7",
+    "tokenId": "0x6527ff45f6c28d1ab980110de036150959c37c30cc0166d9eb54e66e12358e87",
+    "block": 129171263,
+    "tx": "0x849eeb8285d9785a9481b159339dad9b2a581506c2adcf492a09ae88ef7bde88",
+    "ts": 1792690695,
     "score": 0,
     "tags": [],
     "label": "普通"
