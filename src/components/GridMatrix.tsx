@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { getDict, type Dict, type Locale } from "@/lib/i18n";
+import { analyzeName } from "@/lib/vanity";
 
 interface GridCategory {
   key: string;
@@ -57,6 +58,8 @@ export default function GridMatrix({
   const detailCache = useRef(new Map<string, GridDetail | null>());
   const hoverRef = useRef<string | null>(null);
   const [detail, setDetail] = useState<GridDetail | null>(null);
+  // 随机抽号:在未注册全集里随机采样并用共享打分函数淘高分
+  const [lucky, setLucky] = useState<{ name: string; score: number; tags: string[] } | null>(null);
 
   const cat = categories.find((c) => c.key === activeKey) ?? categories[0];
   const registeredSet = useMemo(() => new Set(registered), [registered]);
@@ -72,6 +75,20 @@ export default function GridMatrix({
     if (registeredSet.has(genName(cat.key, i))) regCount++;
   }
   const freeCount = cat.size - regCount;
+
+  function drawLucky() {
+    let best: { name: string; score: number; tags: string[] } | null = null;
+    for (let i = 0; i < 600; i++) {
+      const idx = Math.floor(Math.random() * cat.size);
+      const name = genName(cat.key, idx);
+      if (registeredSet.has(name)) continue;
+      const a = analyzeName(name);
+      if (a.score < 30) continue;
+      if (!best || a.score > best.score) best = { name, score: a.score, tags: a.tags };
+      if (best.score >= 55) break;
+    }
+    setLucky(best);
+  }
 
   function handleEnter(name: string, e: React.MouseEvent) {
     const rect = wrapRef.current?.getBoundingClientRect();
@@ -127,7 +144,52 @@ export default function GridMatrix({
           />
           {t.grid.highlightVacancy}
         </label>
+        <button
+          onClick={drawLucky}
+          className="rounded-full border border-gold/40 bg-gold/10 px-3 py-1 text-sm text-gold transition-colors hover:bg-gold/20"
+        >
+          {t.grid.randomBtn}
+        </button>
       </div>
+
+      {lucky && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-gold/30 bg-gradient-to-r from-gold/10 to-transparent px-5 py-4">
+          <span className="font-mono text-3xl font-bold tracking-tight text-gold">
+            {lucky.name}
+            <span className="text-base font-normal text-zinc-500">.ai</span>
+          </span>
+          <span className="text-sm text-zinc-400">
+            {t.grid.randomScore}{" "}
+            <span className="font-mono font-bold text-gold">{lucky.score}</span>
+          </span>
+          {lucky.tags.length > 0 && (
+            <span className="flex flex-wrap gap-1.5">
+              {lucky.tags.slice(0, 4).map((tag) => (
+                <span
+                  key={tag}
+                  className="rounded bg-gold/10 px-1.5 py-0.5 font-mono text-[11px] text-gold"
+                >
+                  {tag}
+                </span>
+              ))}
+            </span>
+          )}
+          <span className="ml-auto flex gap-2">
+            <button
+              onClick={drawLucky}
+              className="rounded-lg border border-white/15 px-3 py-1.5 text-sm text-zinc-300 transition-colors hover:bg-white/5"
+            >
+              {t.grid.randomAgain}
+            </button>
+            <a
+              href={`/check?name=${lucky.name}`}
+              className="rounded-lg bg-gold px-4 py-1.5 text-sm font-medium text-ink transition-colors hover:bg-gold/90"
+            >
+              {t.grid.randomGo}
+            </a>
+          </span>
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm text-zinc-400">
         <span>
@@ -189,13 +251,14 @@ export default function GridMatrix({
                   href={reg ? `/name/${name}` : `/check?name=${name}`}
                   aria-label={`${name}.ai ${reg ? t.grid.tooltipRegistered : t.grid.tooltipFree}`}
                 >
+                  <rect x={x} y={y} width={cell} height={cell} rx={1} fill={fill} />
+                  {/* 透明放大热区:小格点(7-8px)难以精确悬停,外扩 2px 捕获事件 */}
                   <rect
-                    x={x}
-                    y={y}
-                    width={cell}
-                    height={cell}
-                    rx={1}
-                    fill={fill}
+                    x={x - 2}
+                    y={y - 2}
+                    width={cell + 4}
+                    height={cell + 4}
+                    fill="transparent"
                     onMouseEnter={(e) => handleEnter(name, e)}
                   />
                 </a>
